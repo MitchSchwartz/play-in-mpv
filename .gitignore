@@ -1,2 +1,26 @@
+# Extension packing output — the .pem is the extension's PRIVATE signing key, never commit it
+*.pem
+*.crx
+*.zip
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+
+# Logs
+*.log
+
+# Secrets / local config
+.env
+.env.*
+
+# Editors & OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Node (if tooling is added later)
+node_modules/
