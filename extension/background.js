@@ -3,6 +3,26 @@
 const MAX_PER_TAB = 15;
 const SEGMENT_RE = /\.(ts|m4s|m4v|m4a|aac|mp4|fmp4)(\?|$)/i;
 
+// Only these request types can carry playlists or chunks: XHR/fetch (HLS players),
+// media (native <video>), other, and frames (an .m3u8 opened directly).
+// Skipping images, scripts, CSS and fonts keeps the worker asleep on most pages.
+const REQUEST_TYPES = ["xmlhttprequest", "media", "other", "main_frame", "sub_frame"];
+
+// Tabs that have seen a playlist. Chunk events for any other tab are ignored
+// without touching storage.
+const tabsWithStreams = new Set();
+
+// The worker sleeps and loses memory, so rebuild the set from session storage on
+// startup. Chunk events that arrive before this finishes are skipped; live
+// playlists reload every few seconds, so the tab is re-added almost immediately.
+const rebuilt = chrome.storage.session.get(null).then((all) => {
+  for (const [key, streams] of Object.entries(all)) {
+    if (key.startsWith("tab_") && Array.isArray(streams) && streams.length) {
+      tabsWithStreams.add(Number(key.slice(4)));
+    }
+  }
+});
+
 async function getStreams(tabId) {
   const key = `tab_${tabId}`;
   const data = await chrome.storage.session.get(key);
@@ -47,6 +67,7 @@ chrome.webRequest.onCompleted.addListener(
   (details) => {
     if (details.tabId < 0) return;
     if (/\.m3u8/i.test(details.url)) {
+      tabsWithStreams.add(details.tabId);
       update(details.tabId, (streams) => {
         const s = findOrAdd(streams, details);
         s.time = Date.now();
@@ -57,6 +78,8 @@ chrome.webRequest.onCompleted.addListener(
           s.dead = true;
         }
       });
+    } else if (!tabsWithStreams.has(details.tabId)) {
+      return;
     } else if ((SEGMENT_RE.test(details.url) || details.type === "xmlhttprequest") && details.statusCode < 400) {
       // Players fetch chunks via XHR/fetch; some sites disguise them as .png/.jpg,
       // so any XHR from a known playlist's server counts.
@@ -75,24 +98,31 @@ chrome.webRequest.onCompleted.addListener(
       });
     }
   },
-  { urls: ["<all_urls>"] }
+  { urls: ["<all_urls>"], types: REQUEST_TYPES }
 );
 
 // Playlist failed to load (timeout, DNS, connection refused): mark dead.
 chrome.webRequest.onErrorOccurred.addListener(
   (details) => {
     if (details.tabId < 0 || !/\.m3u8/i.test(details.url)) return;
+    tabsWithStreams.add(details.tabId);
     update(details.tabId, (streams) => {
       findOrAdd(streams, details).dead = true;
     });
   },
-  { urls: ["<all_urls>"] }
+  { urls: ["<all_urls>"], types: REQUEST_TYPES }
 );
 
 // Forget streams when the tab navigates to a new page or closes.
-chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (info.url) setStreams(tabId, []);
+chrome.tabs.onUpdated.addListener(async (tabId, info) => {
+  if (!info.url) return;
+  // Only tabs that had streams have anything to clear. Wait for the rebuild so a
+  // navigation that wakes the worker doesn't leave the old page's streams behind.
+  await rebuilt;
+  if (!tabsWithStreams.delete(tabId)) return;
+  setStreams(tabId, []);
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
+  tabsWithStreams.delete(tabId);
   chrome.storage.session.remove(`tab_${tabId}`);
 });
