@@ -41,7 +41,9 @@ def main():
         "--demuxer-readahead-secs=10",
         "--network-timeout=15",
         "--force-window=immediate",
-        "--keep-open=no",
+        # Stay open when the stream drops so reload.lua can reconnect.
+        "--idle=yes",
+        "--script=" + os.path.join(os.path.dirname(os.path.realpath(__file__)), "mpv", "reload.lua"),
         "--force-media-title=" + msg.get("title", "Stream"),
     ]
     if msg.get("referrer"):

@@ -54,10 +54,19 @@ Start the video, let it play ~10 seconds, click the extension → **▶ Play in 
 
 mpv output is logged to `~/.cache/play-in-mpv.log`.
 
+### Reloading a jammed stream
+
+- **F5** or **Ctrl+R** in the mpv window reloads the stream (jumps back to the live edge,
+  keeping the referrer and headers).
+- mpv **reloads automatically** if playback freezes for 10 seconds or the stream ends
+  unexpectedly. After 5 failed attempts in a row it stops and shows "Stream lost — press F5
+  to retry". Tune the timings at the top of `mpv/reload.lua`.
+
 ## Files
 
 - `extension/` — the browser extension (Manifest V3)
 - `play_in_mpv_host.py` — native messaging helper that launches mpv
+- `mpv/reload.lua` — mpv script for manual and automatic stream reloading
 - `install.sh` — registers the helper with Brave/Chrome/Chromium
 
 ## Contributing
