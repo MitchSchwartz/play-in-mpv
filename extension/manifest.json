@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Play in mpv",
+  "version": "1.0",
+  "description": "Detects HLS (.m3u8) streams on the page and plays them in mpv with hardware decoding.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4ri/rYid+mgEznsqYaeG1ZhpHN/wX3+oErAV4LWHdsB1+RFqOzIbbnl04Dwb03Se1wnPmg0R/mrMCMG5Xy8RbcnLBBnZLYmWEhv6j6UlXMpxsqBgTr2K0dCgSc9HIqtdqJB1XtqH+IFXpvlcWLAI5bLx+8Qs2DGvn9vKcUZ0MMXrXF/mFEAG/lsma49ifH8S7F3bpISi4qL7XuLD7mOwOQOqe9JWD2fIxjgiOD4jEOuwcuN6XrYzjyoVAzBcsbOffw0zO4Gfqnv/zeLKz2vUYBpeRsOQ/T1VPo5vJzTNAqkB/irxd7P36lJqoY+IjWRMHn+qwj7THokZmKaVm5KHBQIDAQAB",
+  "permissions": ["webRequest", "storage", "nativeMessaging", "scripting", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Play in mpv", "default_popup": "popup.html" }
+}

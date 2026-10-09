@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 13px system-ui, sans-serif; width: 380px; margin: 0; padding: 12px; background: #1e1e1e; color: #eee; }
+  h1 { font-size: 14px; margin: 0 0 8px; }
+  button { font: inherit; cursor: pointer; border: 0; border-radius: 6px; padding: 8px 10px; }
+  #playBest { width: 100%; background: #2e7d32; color: #fff; font-weight: 600; margin-bottom: 10px; }
+  #playBest:disabled { background: #444; color: #999; cursor: default; }
+  ul { list-style: none; padding: 0; margin: 0; max-height: 260px; overflow-y: auto; }
+  li { display: flex; gap: 6px; align-items: center; padding: 4px 0; border-top: 1px solid #333; }
+  li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #bbb; font-size: 11px; }
+  li button { background: #333; color: #eee; padding: 4px 8px; }
+  label { display: block; margin: 8px 0 0; color: #bbb; }
+  #status { margin-top: 8px; min-height: 1em; color: #9ccc65; white-space: pre-wrap; }
+  #status.err { color: #ef5350; }
+</style>
+</head>
+<body>
+  <h1>Play in mpv</h1>
+  <button id="playBest" disabled>No stream found yet — start the video first</button>
+  <ul id="list"></ul>
+  <label><input type="checkbox" id="pause" checked> Pause the video in the browser after launching</label>
+  <div id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
