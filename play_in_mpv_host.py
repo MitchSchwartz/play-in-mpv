@@ -32,10 +32,12 @@ def send_message(obj):
 
 
 def mpv_executable(environ, platform=sys.platform, which=shutil.which, exists=os.path.exists):
-    """MPV_PATH if set, then `mpv` on PATH, then scoop's install dirs (Windows), else bare `mpv`.
+    """MPV_PATH if set, then `mpv` on PATH, then known install dirs, else bare `mpv`.
 
-    The scoop fallback covers a browser started before mpv was installed: its stale PATH
-    lacks scoop's mpv folder (scoop adds it via env_add_path and creates no shim).
+    Windows: scoop's install dirs cover a browser started before mpv was installed: its stale
+    PATH lacks scoop's mpv folder (scoop adds it via env_add_path and creates no shim).
+    macOS: Homebrew and mpv.app locations cover a browser launched from the Dock, whose PATH
+    lacks /opt/homebrew/bin and /usr/local/bin.
     """
     if environ.get("MPV_PATH"):
         return environ["MPV_PATH"]
@@ -47,6 +49,16 @@ def mpv_executable(environ, platform=sys.platform, which=shutil.which, exists=os
         for candidate in (
             ntpath.join(scoop_root, "apps", "mpv", "current", "mpv.exe"),
             ntpath.join(scoop_root, "shims", "mpv.exe"),
+        ):
+            if exists(candidate):
+                return candidate
+    if platform == "darwin":
+        # A browser launched from the Dock gets PATH=/usr/bin:/bin:/usr/sbin:/sbin,
+        # which misses Homebrew (Apple Silicon, then Intel) and the mpv.app bundle.
+        for candidate in (
+            "/opt/homebrew/bin/mpv",
+            "/usr/local/bin/mpv",
+            "/Applications/mpv.app/Contents/MacOS/mpv",
         ):
             if exists(candidate):
                 return candidate

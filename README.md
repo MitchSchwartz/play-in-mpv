@@ -16,7 +16,7 @@ recovers from glitches, and skips the page's ad scripts entirely.
 |---|---|
 | Linux | ✅ |
 | Windows 10/11 | ✅ |
-| macOS | ❌ not yet ([#1](../../issues/1)) |
+| macOS | ✅ |
 
 Browsers: Brave, Chrome, Chromium.
 
@@ -57,6 +57,28 @@ Then in `brave://extensions` (or `chrome://extensions`): enable **Developer mode
 
 `install.sh` registers the native messaging helper for Brave, Chrome and Chromium, pointing at
 this folder — re-run it if you move the repo.
+
+## Install (macOS)
+
+1. **Install Python 3 and mpv** with [Homebrew](https://brew.sh):
+   ```bash
+   brew install python mpv
+   ```
+2. **Register the helper** from the repo folder:
+   ```bash
+   ./install.sh
+   ```
+   It finds a working Python 3 (Homebrew first; Apple's `/usr/bin/python3` only if the Command
+   Line Tools are installed) and writes `play_in_mpv_host_macos.sh` into this folder, a small
+   wrapper that runs the helper with that Python by absolute path. Browsers launched from the
+   Dock don't see Homebrew's `PATH`, so the wrapper and the helper both use absolute paths.
+3. In `brave://extensions` (or `chrome://extensions`): enable **Developer mode** →
+   **Load unpacked** → select the `extension/` folder.
+4. **Fully quit the browser** (Cmd+Q, not just closing the window) and relaunch it from the
+   Dock.
+
+`install.sh` registers the helper for Brave, Chrome and Chromium under
+`~/Library/Application Support/` — re-run it if you move the repo or reinstall Python.
 
 ## Install (Windows)
 
@@ -111,7 +133,7 @@ Windows).
 - `play_in_mpv_host.py` — native messaging helper that launches mpv
 - `play_in_mpv_host.bat` — Windows wrapper that runs the helper with Python
 - `mpv/reload.lua` — mpv script for manual and automatic stream reloading
-- `install.sh` — registers the helper with Brave/Chrome/Chromium (Linux)
+- `install.sh` — registers the helper with Brave/Chrome/Chromium (Linux and macOS)
 - `install.ps1` — registers the helper with Brave/Chrome/Chromium (Windows)
 - `tests/` — unit tests for the helper: `python -m unittest discover -s tests`
 
