@@ -60,6 +60,15 @@ mpv output is logged to `~/.cache/play-in-mpv.log`.
 - `play_in_mpv_host.py` — native messaging helper that launches mpv
 - `install.sh` — registers the helper with Brave/Chrome/Chromium
 
+## Contributing
+
+A pre-push hook scans outgoing commits with [gitleaks](https://github.com/gitleaks/gitleaks)
+and blocks the push if it finds secrets. Enable it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ## License
 
 [PolyForm Noncommercial 1.0.0](LICENSE.md) — free for personal, hobby, research, educational
