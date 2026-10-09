@@ -70,6 +70,55 @@ class MpvExecutableTest(unittest.TestCase):
         result = host.mpv_executable(env, "linux", lambda n: None, lambda p: True)
         self.assertEqual(result, "mpv")
 
+    def test_macos_finds_homebrew_apple_silicon(self):
+        path = "/opt/homebrew/bin/mpv"
+        result = host.mpv_executable({}, "darwin", lambda n: None, lambda p: p == path)
+        self.assertEqual(result, path)
+
+    def test_macos_finds_homebrew_intel(self):
+        path = "/usr/local/bin/mpv"
+        result = host.mpv_executable({}, "darwin", lambda n: None, lambda p: p == path)
+        self.assertEqual(result, path)
+
+    def test_macos_finds_app_bundle(self):
+        path = "/Applications/mpv.app/Contents/MacOS/mpv"
+        result = host.mpv_executable({}, "darwin", lambda n: None, lambda p: p == path)
+        self.assertEqual(result, path)
+
+    def test_macos_prefers_apple_silicon_homebrew(self):
+        result = host.mpv_executable({}, "darwin", lambda n: None, lambda p: True)
+        self.assertEqual(result, "/opt/homebrew/bin/mpv")
+
+    def test_macos_which_wins_over_fallbacks(self):
+        result = host.mpv_executable({}, "darwin", lambda n: "/custom/bin/mpv", lambda p: True)
+        self.assertEqual(result, "/custom/bin/mpv")
+
+    def test_macos_mpv_path_wins_over_fallbacks(self):
+        result = host.mpv_executable({"MPV_PATH": "/x/mpv"}, "darwin", lambda n: None, lambda p: True)
+        self.assertEqual(result, "/x/mpv")
+
+    def test_macos_nothing_found_returns_bare_mpv(self):
+        result = host.mpv_executable({}, "darwin", lambda n: None, lambda p: False)
+        self.assertEqual(result, "mpv")
+
+    def test_macos_skips_scoop_lookup(self):
+        env = {"USERPROFILE": "/Users/me"}
+        checked = []
+        host.mpv_executable(env, "darwin", lambda n: None, lambda p: checked.append(p) or False)
+        self.assertFalse(any("scoop" in p for p in checked))
+
+    def test_linux_skips_macos_lookup(self):
+        checked = []
+        result = host.mpv_executable({}, "linux", lambda n: None, lambda p: checked.append(p) or True)
+        self.assertEqual(result, "mpv")
+        self.assertEqual(checked, [])
+
+    def test_windows_skips_macos_lookup(self):
+        env = {"USERPROFILE": r"C:\Users\me"}
+        checked = []
+        host.mpv_executable(env, "win32", lambda n: None, lambda p: checked.append(p) or False)
+        self.assertFalse(any(p.startswith(("/opt/", "/usr/", "/Applications/")) for p in checked))
+
 
 class BuildCommandTest(unittest.TestCase):
     def test_executable_is_first_arg(self):
