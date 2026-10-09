@@ -2,8 +2,13 @@
 
 Run from the repo root:  python -m unittest discover -s tests
 """
+import json
 import os
+import shutil
+import struct
+import subprocess
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -102,6 +107,50 @@ class BuildCommandTest(unittest.TestCase):
     def test_reload_script_path(self):
         expected = os.path.join(os.path.dirname(os.path.realpath(host.__file__)), "mpv", "reload.lua")
         self.assertIn("--script=" + expected, host.build_command(MSG, "mpv"))
+
+
+class SettingsTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmp, "sub", "settings")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def read(self):
+        with open(self.path) as f:
+            return f.read()
+
+    def test_write_settings_off(self):
+        host.write_settings(self.path, False)
+        self.assertEqual(self.read(), "auto_reload=no\n")
+
+    def test_write_settings_on_overwrites(self):
+        host.write_settings(self.path, False)
+        host.write_settings(self.path, True)
+        self.assertEqual(self.read(), "auto_reload=yes\n")
+        self.assertFalse(os.path.exists(self.path + ".tmp"))
+
+    def test_command_passes_settings_path_to_script(self):
+        cmd = host.build_command(MSG, "mpv", settings="/tmp/x/settings")
+        self.assertIn("--script-opts=play_in_mpv-settings=/tmp/x/settings", cmd)
+
+    def test_command_defaults_to_shared_settings_path(self):
+        self.assertIn("--script-opts=play_in_mpv-settings=" + host.SETTINGS, host.build_command(MSG, "mpv"))
+
+    def test_settings_action_writes_file_without_launching(self):
+        # Run the real helper with a temporary home so SETTINGS lands in it.
+        env = dict(os.environ, HOME=self.tmp, USERPROFILE=self.tmp, MPV_PATH="/nonexistent/mpv")
+        payload = json.dumps({"action": "settings", "autoReload": False}).encode()
+        out = subprocess.run(
+            [sys.executable, host.__file__],
+            input=struct.pack("<I", len(payload)) + payload,
+            capture_output=True, env=env, check=True,
+        ).stdout
+        self.assertEqual(json.loads(out[4:]), {"ok": True})
+        with open(os.path.join(self.tmp, ".cache", "play-in-mpv-settings")) as f:
+            self.assertEqual(f.read(), "auto_reload=no\n")
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, ".cache", "play-in-mpv.log")))
 
 
 class PopenKwargsTest(unittest.TestCase):

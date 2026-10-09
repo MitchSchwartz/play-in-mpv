@@ -104,6 +104,10 @@ Windows).
 - mpv **reloads automatically** if playback freezes for 5 seconds or the stream ends
   unexpectedly. After 5 failed attempts in a row it stops and shows "Stream lost — press F5
   to retry". Tune the timings at the top of `mpv/reload.lua`.
+- Turn automatic reloading **off or on with the toggle in the extension popup**. The change
+  applies within a second to mpv windows that are already open, as well as new ones. F5 still
+  works when it's off. (The choice is stored in `~/.cache/play-in-mpv-settings`, which each mpv
+  window checks.)
 
 ## Files
 

@@ -9,6 +9,9 @@ import subprocess
 import sys
 
 LOG = os.path.expanduser("~/.cache/play-in-mpv.log")
+# Shared with every running mpv window: reload.lua polls it, so a toggle in the
+# popup applies to windows that are already open.
+SETTINGS = os.path.expanduser("~/.cache/play-in-mpv-settings")
 
 # Windows process creation flags (spelled out so this file imports on any OS).
 # Chrome runs native hosts inside a job object and kills the whole tree when the
@@ -54,7 +57,16 @@ def mpv_executable(environ, platform=sys.platform, which=shutil.which, exists=os
     return "mpv"
 
 
-def build_command(msg, mpv):
+def write_settings(path, auto_reload):
+    """Write the settings file atomically so reload.lua never reads a half-written file."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("auto_reload=" + ("yes" if auto_reload else "no") + "\n")
+    os.replace(tmp, path)
+
+
+def build_command(msg, mpv, settings=SETTINGS):
     headers = []
     if msg.get("origin"):
         headers.append("Origin: " + msg["origin"])
@@ -71,6 +83,7 @@ def build_command(msg, mpv):
         # Stay open when the stream drops so reload.lua can reconnect.
         "--idle=yes",
         "--script=" + os.path.join(os.path.dirname(os.path.realpath(__file__)), "mpv", "reload.lua"),
+        "--script-opts=play_in_mpv-settings=" + settings,
         "--force-media-title=" + msg.get("title", "Stream"),
     ]
     if msg.get("referrer"):
@@ -92,10 +105,29 @@ def popen_kwargs(platform):
 
 def main():
     msg = read_message()
+
+    # Settings change from the popup: no mpv launch, open windows pick it up.
+    if msg.get("action") == "settings":
+        try:
+            write_settings(SETTINGS, bool(msg.get("autoReload", True)))
+        except OSError as e:
+            send_message({"ok": False, "error": str(e)})
+            return
+        send_message({"ok": True})
+        return
+
     url = msg.get("url", "")
     if not url.startswith(("http://", "https://")):
         send_message({"ok": False, "error": "Bad URL"})
         return
+
+    # Refresh the settings file on every launch so it matches the popup even if
+    # it was deleted or the toggle was changed while the helper was missing.
+    if "autoReload" in msg:
+        try:
+            write_settings(SETTINGS, bool(msg["autoReload"]))
+        except OSError:
+            pass  # reload.lua defaults to on; don't block playback over this
 
     cmd = build_command(msg, mpv_executable(os.environ))
 
