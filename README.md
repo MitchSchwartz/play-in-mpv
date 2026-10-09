@@ -106,7 +106,9 @@ this folder — re-run it if you move the repo.
    (Or allow local scripts once with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`,
    then run `.\install.ps1`.) It warns if mpv or a working Python 3 is missing.
 
-Then load the `extension/` folder unpacked as above and restart the browser.
+Then load the `extension/` folder unpacked as above and **fully quit the browser** — Brave and
+Chrome keep running in the system tray after the window closes, so quit from the tray icon or
+end it in Task Manager — then reopen it.
 
 `install.ps1` writes `local.play_in_mpv.json` into this folder and registers it under
 `HKCU` for Chrome, Chromium and Brave (per-user, no admin needed) — re-run it if you move the
@@ -118,6 +120,17 @@ Start the video, let it play ~10 seconds, click the extension → **▶ Play in 
 
 mpv output is logged to `~/.cache/play-in-mpv.log` (`%USERPROFILE%\.cache\play-in-mpv.log` on
 Windows).
+
+To check your setup, the [hls.js demo page](https://hlsjs.video-dev.org/demo/) plays a public
+HLS test stream.
+
+### Troubleshooting
+
+| Popup error | Fix |
+|---|---|
+| `Specified native messaging host not found` | Re-run the installer, then fully quit and reopen the browser (system tray on Windows, Cmd+Q on macOS). |
+| `The system cannot find the file specified` / `No such file or directory` | mpv wasn't found. The browser was probably started before mpv was installed: fully restart it, or set `MPV_PATH` to mpv's full path. |
+| `No response from helper` / `Native host has exited` | Python failed to start. Re-run the installer and read its warnings. |
 
 ### Reloading a jammed stream
 
