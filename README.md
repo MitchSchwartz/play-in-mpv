@@ -10,6 +10,16 @@ switch back. On older machines (e.g. Intel Haswell integrated graphics) that mea
 and choppy playback for the rest of the session. mpv keeps using VA-API hardware decoding,
 recovers from glitches, and skips the page's ad scripts entirely.
 
+## Supported systems
+
+| System | Status |
+|---|---|
+| Linux | ✅ |
+| Windows 10/11 | ✅ |
+| macOS | ❌ not yet ([#1](../../issues/1)) |
+
+Browsers: Brave, Chrome, Chromium.
+
 ## How it picks the right feed
 
 Streaming pages often load several playlists — backups, decoys, dead mirrors. Each one is
@@ -48,11 +58,44 @@ Then in `brave://extensions` (or `chrome://extensions`): enable **Developer mode
 `install.sh` registers the native messaging helper for Brave, Chrome and Chromium, pointing at
 this folder — re-run it if you move the repo.
 
+## Install (Windows)
+
+1. **Install Python 3.** Either route works — the helper only needs `python` (or `py -3`) on
+   `PATH`:
+   - [scoop](https://scoop.sh): `scoop install python`
+   - [uv](https://docs.astral.sh/uv/): `uv python install 3.13 --default`
+
+   The Microsoft Store `python` alias that ships with Windows is only a stub that opens the
+   Store — it won't work. Check with `python --version` in a new terminal.
+2. **Install mpv** (mpv.io has no official Windows installer):
+   ```powershell
+   scoop bucket add extras
+   scoop install mpv
+   ```
+   Or download a build from [mpv.io/installation](https://mpv.io/installation/) and either add
+   its folder to `PATH` or set the `MPV_PATH` environment variable to the full path of `mpv.exe`.
+
+   The helper finds scoop's mpv automatically even if the browser was open during install;
+   otherwise restart the browser or set `MPV_PATH`.
+3. **Register the helper** from the repo folder:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File install.ps1
+   ```
+   (Or allow local scripts once with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`,
+   then run `.\install.ps1`.) It warns if mpv or a working Python 3 is missing.
+
+Then load the `extension/` folder unpacked as above and restart the browser.
+
+`install.ps1` writes `local.play_in_mpv.json` into this folder and registers it under
+`HKCU` for Chrome, Chromium and Brave (per-user, no admin needed) — re-run it if you move the
+repo.
+
 ## Use
 
 Start the video, let it play ~10 seconds, click the extension → **▶ Play in mpv**.
 
-mpv output is logged to `~/.cache/play-in-mpv.log`.
+mpv output is logged to `~/.cache/play-in-mpv.log` (`%USERPROFILE%\.cache\play-in-mpv.log` on
+Windows).
 
 ### Reloading a jammed stream
 
@@ -66,8 +109,11 @@ mpv output is logged to `~/.cache/play-in-mpv.log`.
 
 - `extension/` — the browser extension (Manifest V3)
 - `play_in_mpv_host.py` — native messaging helper that launches mpv
+- `play_in_mpv_host.bat` — Windows wrapper that runs the helper with Python
 - `mpv/reload.lua` — mpv script for manual and automatic stream reloading
-- `install.sh` — registers the helper with Brave/Chrome/Chromium
+- `install.sh` — registers the helper with Brave/Chrome/Chromium (Linux)
+- `install.ps1` — registers the helper with Brave/Chrome/Chromium (Windows)
+- `tests/` — unit tests for the helper: `python -m unittest discover -s tests`
 
 ## Contributing
 
