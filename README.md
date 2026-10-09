@@ -58,7 +58,7 @@ mpv output is logged to `~/.cache/play-in-mpv.log`.
 
 - **F5** or **Ctrl+R** in the mpv window reloads the stream (jumps back to the live edge,
   keeping the referrer and headers).
-- mpv **reloads automatically** if playback freezes for 10 seconds or the stream ends
+- mpv **reloads automatically** if playback freezes for 5 seconds or the stream ends
   unexpectedly. After 5 failed attempts in a row it stops and shows "Stream lost — press F5
   to retry". Tune the timings at the top of `mpv/reload.lua`.
 

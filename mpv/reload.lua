@@ -2,7 +2,7 @@
 -- or ends unexpectedly. Network options (referrer, user agent, headers) are global,
 -- so they carry over to the reloaded stream.
 
-local STALL_SECONDS = 10   -- frozen this long while not paused -> reload
+local STALL_SECONDS = 5    -- frozen this long while not paused -> reload
 local MAX_RETRIES = 5      -- consecutive failed reloads before giving up
 local RETRY_DELAY = 2      -- seconds to wait after the stream ends/errors
 local HEALTHY_SECONDS = 30 -- playback this long resets the retry count
