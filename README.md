@@ -18,7 +18,9 @@ recovers from glitches, and skips the page's ad scripts entirely.
 | Windows 10/11 | ✅ |
 | macOS | ✅ |
 
-Browsers: Brave, Chrome, Chromium.
+Browsers: Brave, Chrome, Chromium. On Linux they must be regular system packages
+(`.deb`/`.rpm`/AUR) — **Flatpak and Snap** browsers are sandboxed and can't launch mpv. Firefox
+isn't supported (this is a Chromium Manifest V3 extension).
 
 ## How it picks the right feed
 
@@ -47,8 +49,23 @@ side by side — each uses its own native messaging host.
 
 ## Install (Linux)
 
+Install mpv and Python 3 with your package manager:
+
 ```bash
-sudo apt install mpv
+# Ubuntu / Debian / Mint / Pop!_OS
+sudo apt install mpv python3
+
+# Fedora (mpv is in RPM Fusion: https://rpmfusion.org/Configuration)
+sudo dnf install mpv python3
+
+# Arch / Manjaro
+sudo pacman -S mpv python
+```
+
+Open your browser at least once (so its profile folder exists), then register the helper from
+the repo folder:
+
+```bash
 ./install.sh
 ```
 
