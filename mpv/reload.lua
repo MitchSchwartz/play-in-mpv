@@ -1,11 +1,11 @@
--- Reloads the stream on F5 / Ctrl+R, and automatically when a live stream stalls
+-- Reloads the stream on F5 / Ctrl+R / Cmd+R, and automatically when a live stream stalls
 -- or ends unexpectedly. Network options (referrer, user agent, headers) are global,
 -- so they carry over to the reloaded stream.
 --
 -- Automatic reloading can be switched off from the extension popup. The helper
 -- writes the choice to a settings file (path passed via --script-opts) that this
 -- script polls, so the toggle also applies to windows that are already open.
--- F5 / Ctrl+R always work.
+-- F5 / Ctrl+R / Cmd+R always work.
 
 local STALL_SECONDS = 5    -- frozen this long while not paused -> reload
 local MAX_RETRIES = 5      -- consecutive failed reloads before giving up
@@ -51,6 +51,7 @@ end
 
 mp.add_key_binding("F5", "reload-stream", manual_reload)
 mp.add_key_binding("ctrl+r", "reload-stream-alt", manual_reload)
+mp.add_key_binding("meta+r", "reload-stream-mac", manual_reload)  -- Cmd+R on macOS
 
 mp.register_event("start-file", function()
   stream_url = mp.get_property("path") or stream_url

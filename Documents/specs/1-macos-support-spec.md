@@ -18,11 +18,13 @@ Play in mpv works on Linux and Windows. macOS needs the native messaging manifes
 | 4 | `mpv_executable` on macOS falls back (after MPV_PATH and PATH) to `/opt/homebrew/bin/mpv`, `/usr/local/bin/mpv`, `/Applications/mpv.app/Contents/MacOS/mpv` | Unit |
 | 5 | Linux and Windows behavior unchanged (existing tests pass; Linux install.sh still points manifest at the .py directly) | Unit + Manual |
 | 6 | README: macOS ✅ in Supported systems with macOS install steps (Homebrew python + mpv, `./install.sh`, launch browser from Dock to test) | Manual |
-| 7 | End to end on a Mac, browser launched from the Dock: mpv opens, stays open, hwdec active (videotoolbox), F5 works | Manual (needs a Mac) |
+| 7 | End to end on a Mac, browser launched from the Dock: mpv opens, stays open, hwdec active (videotoolbox), F5 works | Manual — verified 2026-10-10 on an Intel MacBook (HD Graphics 6000, macOS 15.7) with mpv 0.39 |
+| 8 | Cmd+R reloads the stream in mpv on macOS (alongside F5 / Ctrl+R) | Manual — verified 2026-10-10 |
+| 9 | README explains which mpv build to install per Mac type (Apple silicon / Intel with Metal 3 / Intel without) and why | Manual |
 
 ## Non-Goals
 
-- Changes to `extension/` or `mpv/reload.lua`
+- Changes to `extension/`; `mpv/reload.lua` only gains the Cmd+R binding
 - Moving the log to `~/Library/Logs`
 - Firefox support
 
@@ -36,7 +38,7 @@ Play in mpv works on Linux and Windows. macOS needs the native messaging manifes
 
 ## Assumptions & Constraints
 
-- Development happens on Windows; no Mac available for automated testing. Shell script verified by syntax check and logic review; criterion 7 needs a human on a Mac.
+- Initially developed on Windows without a Mac; criterion 7 was later verified on a Mac.
 - Keep `install.sh` POSIX/bash-compatible with macOS's bash 3.2 (no associative arrays, no `readlink -f`).
 
 ## Technical Notes
@@ -49,3 +51,4 @@ Play in mpv works on Linux and Windows. macOS needs the native messaging manifes
 
 - Python on macOS: installer-generated wrapper with absolute interpreter path (option A), chosen by user 2026-10-09.
 - Issue #1 serves as the spec; interview skipped, direct implementation.
+- mpv on Intel Macs (found during Mac testing, 2026-10-10): Homebrew has no Intel bottles on macOS 15 (Tier 3, would build from source and needs the Command Line Tools). The official mpv 0.41 `macos-15-intel` build is Vulkan/MoltenVK-only and aborts on the first frame on GPUs without Metal 3 (`-[MTLIGAccelRenderCommandEncoder setVertexBuffer:offset:attributeStride:atIndex:]: unrecognized selector`; with default MoltenVK settings, an earlier `Placement heap type is not supported` assertion). `MVK_CONFIG_USE_MTLHEAP=0` gets past the first error but not the second. The stolendata mpv 0.39 Intel build works (VO `libmpv`/cocoa-cb, hwdec videotoolbox). Documented in the README rather than worked around in code.

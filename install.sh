@@ -17,7 +17,7 @@ case "$(uname)" in
       "$SUPPORT/Google/Chrome"
       "$SUPPORT/Chromium"
     )
-    MPV_HINT="brew install mpv"
+    MPV_HINT="brew install mpv (older Intel Macs: see README)"
     RESTART_HINT="fully quit the browser (Cmd+Q) and relaunch it from the Dock"
 
     # A browser launched from the Dock gets PATH=/usr/bin:/bin:/usr/sbin:/sbin, so the
@@ -60,7 +60,15 @@ WRAPPER
     ;;
 esac
 
-command -v mpv >/dev/null || echo "warning: mpv not found — install it with: $MPV_HINT"
+mpv_found() {
+  command -v mpv >/dev/null && return 0
+  # Same fallbacks as the helper's mpv_executable() on macOS.
+  for m in /opt/homebrew/bin/mpv /usr/local/bin/mpv /Applications/mpv.app/Contents/MacOS/mpv; do
+    [ -x "$m" ] && return 0
+  done
+  return 1
+}
+mpv_found || echo "warning: mpv not found — install it with: $MPV_HINT"
 chmod +x "$HOST_PY"
 
 installed=0
