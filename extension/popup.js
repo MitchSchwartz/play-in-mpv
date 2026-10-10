@@ -25,6 +25,7 @@ async function play(tab, stream) {
       origin: stream.initiator || "",
       userAgent: navigator.userAgent,
       title: tab.title || "Stream",
+      autoReload: $("autoReload").checked,
     });
     if (!res || !res.ok) throw new Error(res && res.error ? res.error : "No response from helper");
   } catch (e) {
@@ -40,7 +41,26 @@ async function play(tab, stream) {
   status("Playing in mpv ✔");
 }
 
+// Auto-reload toggle: saved in the extension and pushed to the helper, which
+// writes the settings file that open mpv windows poll.
+async function setupAutoReload() {
+  const { autoReload = true } = await chrome.storage.local.get("autoReload");
+  $("autoReload").checked = autoReload;
+  $("autoReload").onchange = async () => {
+    const enabled = $("autoReload").checked;
+    await chrome.storage.local.set({ autoReload: enabled });
+    try {
+      const res = await chrome.runtime.sendNativeMessage(HOST, { action: "settings", autoReload: enabled });
+      if (!res || !res.ok) throw new Error(res && res.error ? res.error : "No response from helper");
+      status(`Auto-reload ${enabled ? "on" : "off"} — applied to open mpv windows`);
+    } catch (e) {
+      status("Saved, but couldn't reach the helper: " + e.message, true);
+    }
+  };
+}
+
 (async () => {
+  await setupAutoReload();
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const key = `tab_${tab.id}`;
   const streams = (await chrome.storage.session.get(key))[key] || [];
