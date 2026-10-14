@@ -174,4 +174,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, info) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   tabsWithStreams.delete(tabId);
   chrome.storage.session.remove(`tab_${tabId}`);
+  // A pop-out player window closed: drop its header rule (rule id = tab id).
+  chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [tabId] }).catch(() => {});
 });

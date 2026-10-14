@@ -62,11 +62,33 @@ function markBrowserOnly(tab, stream) {
 }
 
 function pauseBrowserVideo(tab) {
-  if (!$("pause").checked) return;
-  chrome.scripting.executeScript({
+  if (!$("pause").checked) return Promise.resolve();
+  return chrome.scripting.executeScript({
     target: { tabId: tab.id, allFrames: true },
     func: () => document.querySelectorAll("video").forEach((v) => { v.pause(); v.muted = true; }),
   }).catch(() => {});
+}
+
+// Open only the player frame that loaded this feed in its own window (player.html),
+// passing the page that embedded it so the embed still sees the right Referer.
+async function popOut(tab, stream) {
+  let src = tab.url;
+  let ref = "";
+  if (stream.frameId) {
+    const f = await chrome.webNavigation.getFrame({ tabId: tab.id, frameId: stream.frameId }).catch(() => null);
+    if (f && /^https?:/i.test(f.url)) {
+      src = f.url;
+      const parent = f.parentFrameId >= 0
+        ? await chrome.webNavigation.getFrame({ tabId: tab.id, frameId: f.parentFrameId }).catch(() => null)
+        : null;
+      ref = parent && /^https?:/i.test(parent.url) ? parent.url : tab.url;
+    }
+  }
+  const url = chrome.runtime.getURL("player.html") + "?" +
+    new URLSearchParams({ src, ref, title: tab.title || "Player" });
+  await chrome.windows.create({ url, type: "popup", width: 1024, height: 610 });
+  await pauseBrowserVideo(tab);
+  window.close();
 }
 
 // Try feeds best-first; skip any the helper reports as image-disguised.
@@ -91,8 +113,8 @@ async function playFeeds(tab, candidates, render) {
     markBrowserOnly(tab, s);
     render();
   }
-  status("Every feed found on this page hides its video in images, which mpv can't play. " +
-    "Switch to another feed on the site, or watch this one in the browser.", true);
+  status("Every feed on this page hides its video in images, which mpv can't play. " +
+    "Use ⧉ Pop out player to watch just the player in a light window.", true);
 }
 
 (async () => {
@@ -134,8 +156,16 @@ async function playFeeds(tab, candidates, render) {
   }
   render();
 
+  // Pop out the strongest live feed's player, even if mpv can't play it.
+  const popTarget = streams.find((s) => !s.dead);
+  if (popTarget) {
+    $("popOut").disabled = false;
+    $("popOut").onclick = () => popOut(tab, popTarget);
+  }
+
   if (!rankFeeds(streams, now).length) {
-    status("No playable feed: the ones found are dead or hide their video in images.", true);
+    status("No feed mpv can play here (dead, or video hidden in images). " +
+      "Use ⧉ Pop out player to watch just the player in a light window.", true);
     return;
   }
   $("playBest").disabled = false;

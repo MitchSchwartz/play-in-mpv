@@ -199,6 +199,18 @@ HLS test stream.
 | `No response from helper` / `Native host has exited` | Python failed to start. Re-run the installer and read its warnings. |
 | (macOS) mpv window flashes and closes; log ends in `unrecognized selector` or `Placement heap type is not supported` | Your Mac's GPU lacks Metal 3. Install mpv 0.39 instead; see [Which mpv for my Mac?](#which-mpv-for-my-mac). |
 
+### Pop out player (feeds mpv can't play)
+
+**⧉ Pop out player** opens just the site's video player in its own small window, without
+the rest of the page (ads, chat, scripts), and pauses the original tab's video. Use it for
+feeds marked 🖼 browser only. The window's **⟳ Reload player** button (or **R**) restarts the
+player, which also brings back hardware video decoding if the browser fell back to the CPU
+after a glitch. **Hide bar** (or **B**) hides the top bar.
+
+Embeds often only play inside their own site, so for that window only the extension sends the
+original page as the referrer and removes the headers that forbid framing. The rule is
+removed when the window closes.
+
 ### Reloading a jammed stream
 
 - **F5**, **Ctrl+R** or **Cmd+R** (macOS) in the mpv window reloads the stream (jumps back to
@@ -219,6 +231,7 @@ HLS test stream.
 - `mpv/reload.lua` — mpv script for manual and automatic stream reloading
 - `install.sh` — registers the helper with Brave/Chrome/Chromium (Linux and macOS)
 - `install.ps1` — registers the helper with Brave/Chrome/Chromium (Windows)
+- `extension/player.html`, `player.js` — the pop-out player window
 - `extension/scoring.js` — feed scoring shared by the background worker and popup
 - `tests/` — unit tests: `python -m unittest discover -s tests` (helper) and
   `node --test tests/test_scoring.js` (feed scoring)
