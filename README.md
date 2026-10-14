@@ -221,8 +221,11 @@ For that window only, the extension sends the original page as the referrer (emb
 refuse to load without it), blocks clicks that try to take the window to another site and puts
 the player back (click-hijack ads), and closes any tab or window the player opens (pop-ups).
 
-**▶ Play in mpv** (secondary button) hands the feed to mpv instead — lighter still, when the
-feed allows it.
+**▶ Play in mpv** (secondary button) hands the feed to an external player instead — lighter
+still, when the feed allows it. The dropdown next to it picks **mpv** or **VLC** (remembered).
+VLC only accepts a referrer and user agent, not cookies or token headers, so streams that check
+those only play in mpv; the popup says so when it happens. Auto-reload and F5 are mpv-only.
+If VLC isn't on your PATH, set `VLC_PATH` (like `MPV_PATH`).
 
 ### Reloading a jammed stream
 

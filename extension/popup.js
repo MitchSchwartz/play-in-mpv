@@ -37,7 +37,7 @@ async function setupAutoReload() {
 }
 
 // Ask the helper to play one feed. It checks the feed's first chunk and refuses
-// (browserOnly) if the video is hidden in images, without opening mpv.
+// (browserOnly) if the video is hidden in images, without opening a player.
 async function launch(tab, stream) {
   try {
     const res = await chrome.runtime.sendNativeMessage(HOST, {
@@ -47,6 +47,7 @@ async function launch(tab, stream) {
       userAgent: navigator.userAgent,
       title: tab.title || "Stream",
       autoReload: $("autoReload").checked,
+      player: $("player").value,
       // Exact headers the browser sent for this playlist (cookies, tokens, referer).
       headers: stream.headers || null,
     });
@@ -99,11 +100,11 @@ async function playFeeds(tab, candidates, render) {
   $("playBest").disabled = true;
   for (let i = 0; i < candidates.length; i++) {
     const s = candidates[i];
-    status(candidates.length > 1 ? `Checking feed ${i + 1} of ${candidates.length}…` : "Launching mpv…");
+    status(candidates.length > 1 ? `Checking feed ${i + 1} of ${candidates.length}…` : `Launching ${playerName()}…`);
     const res = await launch(tab, s);
     if (res.ok) {
       pauseBrowserVideo(tab);
-      status("Playing in mpv ✔");
+      status(res.warning ? `Opened in ${playerName()}. ${res.warning}` : `Playing in ${playerName()} ✔`, !!res.warning);
       render(s);
       $("playBest").disabled = false;
       return;
@@ -116,8 +117,21 @@ async function playFeeds(tab, candidates, render) {
     markBrowserOnly(tab, s);
     render();
   }
-  status("Every feed on this page hides its video in images, which mpv can't play. " +
+  status(`Every feed on this page hides its video in images, which ${playerName()} can't play. ` +
     "Use ⧉ Watch in pop-out to watch just the player in a light window.", true);
+}
+
+// External player choice (mpv or VLC), remembered between uses.
+const playerName = () => ($("player").value === "vlc" ? "VLC" : "mpv");
+async function setupPlayerChoice() {
+  const { player = "mpv" } = await chrome.storage.local.get("player");
+  $("player").value = player;
+  const label = () => { $("playBest").textContent = `▶ Play in ${playerName()}`; };
+  label();
+  $("player").onchange = () => {
+    chrome.storage.local.set({ player: $("player").value });
+    label();
+  };
 }
 
 // Pop-out options, remembered between uses.
@@ -133,6 +147,7 @@ async function setupPopoutOptions() {
 (async () => {
   await setupAutoReload();
   await setupPopoutOptions();
+  await setupPlayerChoice();
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const key = `tab_${tab.id}`;
   let streams = (await chrome.storage.session.get(key))[key] || [];
@@ -179,7 +194,7 @@ async function setupPopoutOptions() {
   }
 
   if (!rankFeeds(streams, now).length) {
-    status("No feed mpv can play here (dead, or video hidden in images). " +
+    status(`No feed ${playerName()} can play here (dead, or video hidden in images). ` +
       "Use ⧉ Watch in pop-out to watch just the player in a light window.", true);
     return;
   }

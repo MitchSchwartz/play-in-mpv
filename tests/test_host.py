@@ -242,6 +242,49 @@ class BrowserHeadersTest(unittest.TestCase):
         self.assertIn("--ytdl=no", host.build_command(MSG, "mpv"))
 
 
+class VlcTest(unittest.TestCase):
+    HEADERS = [
+        ["User-Agent", "BrowserUA/2"],
+        ["Referer", "https://player.example/embed/123"],
+        ["Origin", "https://player.example"],
+        ["Cookie", "session=abc"],
+        ["X-Security-Token", "s3cret"],
+    ]
+
+    def test_vlc_path_env_var(self):
+        self.assertEqual(host.vlc_executable({"VLC_PATH": "/x/vlc"}), "/x/vlc")
+
+    def test_vlc_on_path(self):
+        self.assertEqual(host.vlc_executable({}, "linux", lambda n: "/usr/bin/vlc"), "/usr/bin/vlc")
+
+    def test_vlc_windows_program_files(self):
+        env = {"ProgramFiles": r"C:\Program Files"}
+        exe = r"C:\Program Files\VideoLAN\VLC\vlc.exe"
+        self.assertEqual(host.vlc_executable(env, "win32", lambda n: None, lambda p: p == exe), exe)
+
+    def test_vlc_macos_app(self):
+        exe = "/Applications/VLC.app/Contents/MacOS/VLC"
+        self.assertEqual(host.vlc_executable({}, "darwin", lambda n: None, lambda p: p == exe), exe)
+
+    def test_vlc_not_found(self):
+        self.assertEqual(host.vlc_executable({}, "linux", lambda n: None, lambda p: False), "vlc")
+
+    def test_vlc_command_passes_referrer_and_agent(self):
+        cmd, dropped = host.build_vlc_command(dict(MSG, headers=self.HEADERS), "vlc")
+        self.assertEqual(cmd[0], "vlc")
+        self.assertEqual(cmd[-1], MSG["url"])
+        self.assertIn("--http-user-agent=BrowserUA/2", cmd)
+        self.assertIn("--http-referrer=https://player.example/embed/123", cmd)
+        self.assertIn("--meta-title=My Stream", cmd)
+        self.assertEqual(sorted(dropped), ["Cookie", "X-Security-Token"])
+        self.assertFalse(any("s3cret" in a or "session=abc" in a for a in cmd))
+
+    def test_vlc_fallback_headers_drop_nothing(self):
+        cmd, dropped = host.build_vlc_command(MSG, "vlc")
+        self.assertIn("--http-referrer=https://example.com/watch", cmd)
+        self.assertEqual(dropped, [])
+
+
 class ProbeTest(unittest.TestCase):
     PNG = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
     TS = b"\x47" + b"\x00" * 15

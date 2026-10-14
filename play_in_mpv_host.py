@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Native messaging helper: receives a stream URL from the extension and launches mpv."""
+"""Native messaging helper: receives a stream URL from the extension and launches mpv or VLC."""
 import json
 import ntpath
 import os
@@ -70,6 +70,28 @@ def mpv_executable(environ, platform=sys.platform, which=shutil.which, exists=os
                 return candidate
     # Not found: return the bare name so the launch error stays loud and gets logged.
     return "mpv"
+
+
+def vlc_executable(environ, platform=sys.platform, which=shutil.which, exists=os.path.exists):
+    """VLC_PATH if set, then `vlc` on PATH, then the standard install locations, else bare `vlc`."""
+    if environ.get("VLC_PATH"):
+        return environ["VLC_PATH"]
+    found = which("vlc")
+    if found:
+        return found
+    candidates = ()
+    if platform == "win32":
+        candidates = tuple(
+            ntpath.join(environ[var], "VideoLAN", "VLC", "vlc.exe")
+            for var in ("ProgramFiles", "ProgramFiles(x86)")
+            if environ.get(var)
+        )
+    elif platform == "darwin":
+        candidates = ("/Applications/VLC.app/Contents/MacOS/VLC",)
+    for candidate in candidates:
+        if exists(candidate):
+            return candidate
+    return "vlc"
 
 
 # Magic bytes of image formats some feeds use to hide video chunks. Only the site's
@@ -217,6 +239,31 @@ def build_command(msg, mpv, settings=SETTINGS):
     return cmd
 
 
+def build_vlc_command(msg, vlc):
+    """VLC command line, plus the names of headers VLC can't send.
+
+    VLC 3 only takes a referrer and user agent on the command line; cookies and
+    token headers can't be passed, so streams that check them only work in mpv.
+    """
+    cmd = [
+        vlc,
+        "--http-reconnect",
+        "--network-caching=3000",
+        "--meta-title=" + msg.get("title", "Stream"),
+    ]
+    dropped = []
+    for name, value in request_headers(msg):
+        lower = name.lower()
+        if lower == "user-agent":
+            cmd.append("--http-user-agent=" + value)
+        elif lower == "referer":
+            cmd.append("--http-referrer=" + value)
+        elif lower not in LOGGABLE_HEADERS:
+            dropped.append(name)
+    cmd.append(msg["url"])
+    return cmd, dropped
+
+
 def popen_kwargs(platform):
     """Launch options that let mpv outlive this helper process."""
     if platform == "win32":
@@ -250,7 +297,10 @@ def main():
         except OSError:
             pass  # reload.lua defaults to on; don't block playback over this
 
-    # Don't open an mpv window for a feed whose video is hidden in images.
+    player = "vlc" if msg.get("player") == "vlc" else "mpv"
+    player_name = "VLC" if player == "vlc" else "mpv"
+
+    # Don't open a player window for a feed whose video is hidden in images.
     if msg.get("probe", True):
         image = probe_stream(msg)
         try:
@@ -261,10 +311,17 @@ def main():
             pass
         if image:
             send_message({"ok": False, "browserOnly": True,
-                          "error": "This feed hides its video in %s images; mpv can't play it" % image})
+                          "error": "This feed hides its video in %s images; %s can't play it" % (image, player_name)})
             return
 
-    cmd = build_command(msg, mpv_executable(os.environ))
+    reply = {"ok": True}
+    if player == "vlc":
+        cmd, dropped = build_vlc_command(msg, vlc_executable(os.environ))
+        if dropped:
+            reply["warning"] = ("VLC can't send this stream's %s header(s). If VLC can't open it, use mpv."
+                                % ", ".join(sorted(set(dropped))))
+    else:
+        cmd = build_command(msg, mpv_executable(os.environ))
 
     os.makedirs(os.path.dirname(LOG), exist_ok=True)
     log = open(LOG, "a")
@@ -276,7 +333,7 @@ def main():
         log.write("launch failed: " + str(e) + "\n")
         send_message({"ok": False, "error": str(e)})
         return
-    send_message({"ok": True})
+    send_message(reply)
 
 
 if __name__ == "__main__":

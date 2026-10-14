@@ -8,8 +8,10 @@
   button { font: inherit; cursor: pointer; border: 0; border-radius: 6px; padding: 8px 10px; }
   #popOut { width: 100%; background: #2e7d32; color: #fff; font-weight: 600; margin-bottom: 6px; }
   #popOut:disabled { background: #444; color: #999; cursor: default; }
-  #playBest { width: 100%; background: #333; color: #eee; margin-bottom: 10px; }
+  .player-row { display: flex; gap: 4px; margin-bottom: 10px; }
+  #playBest { flex: 1; background: #333; color: #eee; }
   #playBest:disabled { color: #777; cursor: default; }
+  #player { font: inherit; background: #333; color: #eee; border: 0; border-radius: 6px; padding: 0 6px; cursor: pointer; }
   .opts { display: flex; gap: 14px; margin: -4px 0 10px; }
   .opts label { margin: 0; font-size: 12px; }
   ul { list-style: none; padding: 0; margin: 0; max-height: 260px; overflow-y: auto; }
@@ -37,12 +39,18 @@
     <label><input type="checkbox" id="autoplay" checked> Auto-play</label>
     <label title="Esc leaves fullscreen"><input type="checkbox" id="fullscreen" checked> Fullscreen window</label>
   </div>
-  <button id="playBest" disabled>▶ Play in mpv</button>
+  <div class="player-row">
+    <button id="playBest" disabled>▶ Play in mpv</button>
+    <select id="player" title="Which external player to use">
+      <option value="mpv">mpv</option>
+      <option value="vlc">VLC</option>
+    </select>
+  </div>
   <ul id="list"></ul>
   <label><input type="checkbox" id="pause" checked> Pause the video on the original page after launching</label>
   <label class="toggle" for="autoReload">
     <span>Auto-reload when the stream freezes
-      <small>Applies to open mpv windows too. F5 always reloads.</small></span>
+      <small>mpv only. Applies to open mpv windows too. F5 always reloads.</small></span>
     <span class="switch">
       <input type="checkbox" id="autoReload" role="switch" checked>
       <span class="slider"></span>
