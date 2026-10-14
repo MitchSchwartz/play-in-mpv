@@ -197,11 +197,15 @@ async function getPopouts() {
   return (await chrome.storage.session.get(POPOUTS_KEY))[POPOUTS_KEY] || {};
 }
 
-async function openPopout({ src, ref }) {
+async function openPopout({ src, ref, autoplay = true, fullscreen = true }) {
   if (!/^https?:/i.test(src)) return;
   const host = new URL(src).hostname;
   const hosts = [...new Set([host, host.replace(/^www\./, "")])];
-  const win = await chrome.windows.create({ url: "about:blank", type: "popup", width: 1024, height: 576 });
+  const win = await chrome.windows.create(
+    fullscreen
+      ? { url: "about:blank", type: "popup", state: "fullscreen" }
+      : { url: "about:blank", type: "popup", width: 1024, height: 576 }
+  );
   const tabId = win.tabs[0].id;
   const [refRule, blockRule] = popoutRuleIds(tabId);
   const addRules = [{
@@ -220,7 +224,7 @@ async function openPopout({ src, ref }) {
   }
   await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: popoutRuleIds(tabId), addRules });
   const popouts = await getPopouts();
-  popouts[tabId] = src;
+  popouts[tabId] = { src, autoplay };
   await chrome.storage.session.set({ [POPOUTS_KEY]: popouts });
   await chrome.tabs.update(tabId, { url: src });
 }
@@ -243,13 +247,54 @@ chrome.tabs.onCreated.addListener(async (tab) => {
   }
 });
 
+// Auto-play: once each page or frame in a pop-out finishes loading, start its video.
+chrome.webNavigation.onCompleted.addListener(async (details) => {
+  if (!(await getPopouts())[details.tabId]?.autoplay) return;
+  chrome.scripting.executeScript({
+    target: { tabId: details.tabId, frameIds: [details.frameId] },
+    func: startPlayback,
+  }).catch(() => {});
+});
+
+// Runs inside the player page. Players often build the <video> late or wait for a
+// click on their big play button, so retry for a while. If the browser blocks
+// sound without a click, fall back to muted playback (one click unmutes).
+function startPlayback() {
+  const PLAY_BUTTONS = [
+    ".jw-icon-display", ".vjs-big-play-button", ".plyr__control--overlaid", ".fp-play",
+    "[class*='big-play']", "[class*='play-button']", "button[aria-label*='play' i]",
+  ].join(",");
+  const deadline = Date.now() + 20000;
+  let clicks = 0;
+  const biggestVideo = () =>
+    [...document.querySelectorAll("video")].sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
+  const timer = setInterval(() => {
+    const video = biggestVideo();
+    if ((video && !video.paused) || Date.now() > deadline) return clearInterval(timer);
+    if (video && (video.currentSrc || video.src)) {
+      video.play().catch((e) => {
+        if (e.name === "NotAllowedError") {
+          video.muted = true;
+          video.play().catch(() => {});
+        }
+      });
+    } else if (clicks < 3) {
+      const button = document.querySelector(PLAY_BUTTONS);
+      if (button) {
+        clicks++;
+        button.click();
+      }
+    }
+  }, 1000);
+}
+
 // A blocked navigation leaves an error page in the window: put the player back.
 // If the player itself redirects off-site, restoring would loop, so give up when
 // it happens again within a few seconds.
 const lastRestore = {};
 chrome.webNavigation.onErrorOccurred.addListener(async (details) => {
   if (details.frameId !== 0 || !/BLOCKED_BY_CLIENT/.test(details.error)) return;
-  const src = (await getPopouts())[details.tabId];
+  const src = (await getPopouts())[details.tabId]?.src;
   if (!src) return;
   const now = Date.now();
   if (now - (lastRestore[details.tabId] || 0) < 5000) return;

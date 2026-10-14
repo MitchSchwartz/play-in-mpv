@@ -199,20 +199,29 @@ HLS test stream.
 | `No response from helper` / `Native host has exited` | Python failed to start. Re-run the installer and read its warnings. |
 | (macOS) mpv window flashes and closes; log ends in `unrecognized selector` or `Placement heap type is not supported` | Your Mac's GPU lacks Metal 3. Install mpv 0.39 instead; see [Which mpv for my Mac?](#which-mpv-for-my-mac). |
 
-### Pop out player (feeds mpv can't play)
+### Watch in pop-out (main button)
 
-**⧉ Pop out player** opens just the site's video player page in its own small window, without
-the rest of the site (ads, chat, scripts), and pauses the original tab's video. Use it for feeds
-marked 🖼 browser only. It's a normal page, so **Brave Shields still apply**. Press **F5** in the
-window to restart the player, which also brings back hardware video decoding if the browser fell
-back to the CPU after a glitch.
+**⧉ Watch in pop-out** opens just the site's video player page in its own window, without the
+rest of the site (ads, chat, scripts), and pauses the original tab's video. It works with every
+feed, including ones mpv can't play (🖼 browser only). It's a normal page, so **Brave Shields
+still apply**. You can close the original tab afterwards.
 
-For that window only, the extension:
+- **Auto-play** (on by default): starts the video, clicking the player's play button if it has
+  one. Brave blocks sound until you interact unless the site may autoplay; then it starts muted
+  and one click unmutes. To always get sound, allow the player's site under
+  Settings → Privacy and security → Site and Shields settings → Autoplay.
+- **Fullscreen window** (on by default): opens the window fullscreen. Browsers only allow true
+  video fullscreen after a click, so this fills the screen with the player page instead.
+  **F11** leaves fullscreen.
+- **F5** restarts the player, which also brings back hardware video decoding if the browser
+  fell back to the CPU after a glitch.
 
-- sends the original page as the referrer, since embeds often refuse to load without it;
-- blocks clicks that try to take the window to another site (click-hijack ads) and puts the
-  player back;
-- closes any tab or window the player tries to open (pop-up ads).
+For that window only, the extension sends the original page as the referrer (embeds often
+refuse to load without it), blocks clicks that try to take the window to another site and puts
+the player back (click-hijack ads), and closes any tab or window the player opens (pop-ups).
+
+**▶ Play in mpv** (secondary button) hands the feed to mpv instead — lighter still, when the
+feed allows it.
 
 ### Reloading a jammed stream
 

@@ -86,7 +86,11 @@ async function popOut(tab, stream) {
     }
   }
   await pauseBrowserVideo(tab);
-  await chrome.runtime.sendMessage({ type: "popOut", src, ref });
+  await chrome.runtime.sendMessage({
+    type: "popOut", src, ref,
+    autoplay: $("autoplay").checked,
+    fullscreen: $("fullscreen").checked,
+  });
   window.close();
 }
 
@@ -113,11 +117,22 @@ async function playFeeds(tab, candidates, render) {
     render();
   }
   status("Every feed on this page hides its video in images, which mpv can't play. " +
-    "Use ⧉ Pop out player to watch just the player in a light window.", true);
+    "Use ⧉ Watch in pop-out to watch just the player in a light window.", true);
+}
+
+// Pop-out options, remembered between uses.
+async function setupPopoutOptions() {
+  const { popoutAutoplay = true, popoutFullscreen = true } =
+    await chrome.storage.local.get(["popoutAutoplay", "popoutFullscreen"]);
+  $("autoplay").checked = popoutAutoplay;
+  $("fullscreen").checked = popoutFullscreen;
+  $("autoplay").onchange = () => chrome.storage.local.set({ popoutAutoplay: $("autoplay").checked });
+  $("fullscreen").onchange = () => chrome.storage.local.set({ popoutFullscreen: $("fullscreen").checked });
 }
 
 (async () => {
   await setupAutoReload();
+  await setupPopoutOptions();
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const key = `tab_${tab.id}`;
   let streams = (await chrome.storage.session.get(key))[key] || [];
@@ -159,15 +174,15 @@ async function playFeeds(tab, candidates, render) {
   const popTarget = streams.find((s) => !s.dead);
   if (popTarget) {
     $("popOut").disabled = false;
+    $("popOut").textContent = "⧉ Watch in pop-out";
     $("popOut").onclick = () => popOut(tab, popTarget);
   }
 
   if (!rankFeeds(streams, now).length) {
     status("No feed mpv can play here (dead, or video hidden in images). " +
-      "Use ⧉ Pop out player to watch just the player in a light window.", true);
+      "Use ⧉ Watch in pop-out to watch just the player in a light window.", true);
     return;
   }
   $("playBest").disabled = false;
-  $("playBest").textContent = "▶ Play in mpv";
   $("playBest").onclick = () => playFeeds(tab, rankFeeds(streams, now), render);
 })();
