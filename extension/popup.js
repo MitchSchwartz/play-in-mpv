@@ -13,6 +13,7 @@ function ago(ms) {
 
 function describe(s, best, now) {
   if (s.dead) return `✖ dead — ${s.url}`;
+  if (s.imageChunks) return `🖼 browser only — ${s.url}`;
   const state = isLive(s, now) ? "live" : s.lastActive ? `idle ${ago(now - s.lastActive)}` : "idle";
   return `${s === best ? "★ " : ""}${state} · ${s.segs} chunks, ${s.hits} loads — ${s.url}`;
 }
@@ -65,7 +66,17 @@ async function setupAutoReload() {
   await setupAutoReload();
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const key = `tab_${tab.id}`;
-  const streams = (await chrome.storage.session.get(key))[key] || [];
+  let streams = (await chrome.storage.session.get(key))[key] || [];
+
+  // Hide links from players that are no longer on the page (and forget them).
+  const frames = await chrome.webNavigation.getAllFrames({ tabId: tab.id }).catch(() => null);
+  if (frames) {
+    const kept = pruneGone(streams, new Set(frames.map((f) => f.documentId).filter(Boolean)));
+    if (kept.length !== streams.length) {
+      streams = kept;
+      await chrome.storage.session.set({ [key]: streams });
+    }
+  }
   if (!streams.length) return;
 
   const now = Date.now();
@@ -75,6 +86,10 @@ async function setupAutoReload() {
   $("playBest").disabled = false;
   $("playBest").textContent = "▶ Play in mpv";
   $("playBest").onclick = () => play(tab, best);
+  if (best.imageChunks) {
+    status("This feed hides its video inside image files, which only the site's player can unpack — " +
+      "mpv can't play it. Try another feed on the site, or watch it in the browser.", true);
+  }
 
   for (const s of streams) {
     const li = document.createElement("li");

@@ -33,6 +33,13 @@ scored from real network activity:
 - **Successful playlist reloads** — live players re-fetch the active playlist every few seconds.
 - **Timeouts / errors** — marked dead and never chosen.
 
+Links are tied to the player (frame) that loaded them. When a site swaps its player to another
+feed without reloading the page, the old player's links are dropped, and chunks only count
+toward playlists from the same player.
+
+Some feeds hide their video inside real image files (PNG/WebP on an image CDN) that only the
+site's own player can unpack. mpv can't play these; the popup marks them **🖼 browser only**.
+
 Scores **fade within seconds** when a feed goes quiet, so the pick reflects what's playing *now*.
 If you switch feeds on a page that doesn't reload, the new feed takes over the ★ within a few
 seconds instead of losing to the old feed's history.

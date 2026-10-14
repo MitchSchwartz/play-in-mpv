@@ -57,6 +57,10 @@ function findOrAdd(streams, details) {
           score: 0, scoreAt: 0, lastLoad: null, lastActive: null };
     streams.push(s);
   }
+  // Which frame document loaded it: lets us drop links from players that were
+  // replaced (feed switched in an iframe) and keep chunk credit per player.
+  if (details.documentId) s.documentId = details.documentId;
+  if (details.frameId != null) s.frameId = details.frameId;
   return s;
 }
 
@@ -88,16 +92,27 @@ chrome.webRequest.onCompleted.addListener(
       // (see matchChunk in scoring.js).
       update(details.tabId, (streams) => {
         const now = Date.now();
-        const match = matchChunk(streams, details.url, now);
+        const match = matchChunk(streams, details.url, now, details.documentId);
         if (!match) return false;
         match.segs++;
         match.time = now;
         addScore(match, CHUNK_WEIGHT, now);
+        if (isImageChunk(details)) match.imageChunks = (match.imageChunks || 0) + 1;
       });
     }
   },
-  { urls: ["<all_urls>"], types: REQUEST_TYPES }
+  { urls: ["<all_urls>"], types: REQUEST_TYPES },
+  ["responseHeaders"]
 );
+
+// Some feeds hide their video inside real image files (e.g. PNGs on an image CDN)
+// that only the site's own player can unpack; mpv can't play those. A large chunk
+// served as image/* marks the feed so the popup can say so.
+function isImageChunk(details) {
+  const header = (name) =>
+    (details.responseHeaders || []).find((h) => h.name.toLowerCase() === name)?.value || "";
+  return header("content-type").toLowerCase().startsWith("image/") && Number(header("content-length") || 0) > 100000;
+}
 
 // Playlist failed to load (timeout, DNS, connection refused): mark dead.
 chrome.webRequest.onErrorOccurred.addListener(
@@ -110,6 +125,20 @@ chrome.webRequest.onErrorOccurred.addListener(
   },
   { urls: ["<all_urls>"], types: REQUEST_TYPES }
 );
+
+// A frame loaded a new document (e.g. the site swapped the player iframe to
+// another feed without reloading the page): forget that frame's old links.
+chrome.webNavigation.onCommitted.addListener(async (details) => {
+  await rebuilt;
+  if (!tabsWithStreams.has(details.tabId)) return;
+  update(details.tabId, (streams) => {
+    const before = streams.length;
+    const kept = streams.filter((s) => !(s.frameId === details.frameId && s.documentId && s.documentId !== details.documentId));
+    if (kept.length === before) return false;
+    streams.length = 0;
+    streams.push(...kept);
+  });
+});
 
 // Forget streams when the tab navigates to a new page or closes.
 chrome.tabs.onUpdated.addListener(async (tabId, info) => {

@@ -1,7 +1,7 @@
 // Tests for extension/scoring.js. Run from the repo root:  node --test tests/
 const test = require("node:test");
 const assert = require("node:assert");
-const { addScore, pickBest, isLive, matchChunk, currentScore, PLAYLIST_WEIGHT, CHUNK_WEIGHT } = require("../extension/scoring.js");
+const { pruneGone, addScore, pickBest, isLive, matchChunk, currentScore, PLAYLIST_WEIGHT, CHUNK_WEIGHT } = require("../extension/scoring.js");
 
 function feed(url) {
   return { url, hits: 0, segs: 0, dead: false, score: 0, scoreAt: 0, lastLoad: null, lastActive: null };
@@ -80,4 +80,21 @@ test("streams saved by the previous version (no score fields) still work", () =>
   addScore(fresh, PLAYLIST_WEIGHT, 1000);
   assert.strictEqual(currentScore(legacy, 1000), 0);
   assert.strictEqual(pickBest([legacy, fresh], 1000), fresh);
+});
+
+test("links from players no longer on the page are dropped", () => {
+  const old = { ...feed("https://a.example/old.m3u8"), documentId: "DOC-OLD" };
+  const cur = { ...feed("https://b.example/new.m3u8"), documentId: "DOC-NEW" };
+  const unknown = feed("https://c.example/x.m3u8");
+  const kept = pruneGone([old, cur, unknown], new Set(["DOC-MAIN", "DOC-NEW"]));
+  assert.deepStrictEqual(kept.map((s) => s.url), [cur.url, unknown.url]);
+});
+
+test("chunks only credit playlists from the same player document", () => {
+  const other = { ...feed("https://cdn.example/live/a/index.m3u8"), documentId: "DOC-1", lastLoad: 5000 };
+  const mine = { ...feed("https://elsewhere.example/b/index.m3u8"), documentId: "DOC-2", lastLoad: 1000 };
+  // Same folder as `other`, but requested by DOC-2's player.
+  assert.strictEqual(matchChunk([other, mine], "https://cdn.example/live/a/seg.ts", 5500, "DOC-2"), mine);
+  // Without a document id, falls back to folder matching.
+  assert.strictEqual(matchChunk([other, mine], "https://cdn.example/live/a/seg.ts", 5500), other);
 });

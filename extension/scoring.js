@@ -30,18 +30,30 @@ function isLive(s, now) {
   return !s.dead && s.lastActive != null && now - s.lastActive < LIVE_MS;
 }
 
+// Drop links whose frame document no longer exists on the page (player removed
+// or replaced). Links without a recorded document are kept.
+function pruneGone(streams, liveDocumentIds) {
+  return streams.filter((s) => !s.documentId || liveDocumentIds.has(s.documentId));
+}
+
 function dirOf(url) {
   const u = new URL(url);
   return u.origin + u.pathname.replace(/[^/]*$/, "");
 }
 
 // Which playlist does a downloaded chunk belong to?
+// 0. Only playlists loaded by the same frame document as the chunk, when known:
+//    each player fetches its own chunks, so feeds in other players never get credit.
 // 1. A playlist in the same folder (or a parent folder) — most recently loaded first.
 // 2. Otherwise, the playlist loaded most recently, if within CHUNK_ATTRIBUTION_MS:
 //    players fetch the playlist and then its next chunk, often from a different
 //    CDN server than the playlist itself.
-function matchChunk(streams, chunkUrl, now) {
-  const live = streams.filter((s) => !s.dead && s.lastLoad != null);
+function matchChunk(streams, chunkUrl, now, documentId) {
+  let live = streams.filter((s) => !s.dead && s.lastLoad != null);
+  if (documentId) {
+    const sameDoc = live.filter((s) => s.documentId === documentId);
+    if (sameDoc.length) live = sameDoc;
+  }
   const byRecentLoad = (a, b) => b.lastLoad - a.lastLoad;
   const dir = dirOf(chunkUrl);
   const sameDir = live.filter((s) => dir.startsWith(dirOf(s.url))).sort(byRecentLoad);
@@ -51,5 +63,5 @@ function matchChunk(streams, chunkUrl, now) {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { currentScore, addScore, pickBest, isLive, matchChunk, dirOf, DECAY_MS, PLAYLIST_WEIGHT, CHUNK_WEIGHT };
+  module.exports = { pruneGone, currentScore, addScore, pickBest, isLive, matchChunk, dirOf, DECAY_MS, PLAYLIST_WEIGHT, CHUNK_WEIGHT };
 }
