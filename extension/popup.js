@@ -6,13 +6,15 @@ function status(msg, isErr = false) {
   $("status").className = isErr ? "err" : "";
 }
 
-// Video chunks being downloaded is the strongest sign a feed is really playing;
-// successful playlist reloads are next. Dead links never win.
-function score(s) {
-  return s.dead ? -1 : s.segs * 10 + s.hits;
+function ago(ms) {
+  const sec = Math.round(ms / 1000);
+  return sec < 60 ? `${sec}s` : `${Math.round(sec / 60)}m`;
 }
-function pickBest(streams) {
-  return streams.reduce((best, s) => (score(s) > score(best) ? s : best), streams[0]);
+
+function describe(s, best, now) {
+  if (s.dead) return `✖ dead — ${s.url}`;
+  const state = isLive(s, now) ? "live" : s.lastActive ? `idle ${ago(now - s.lastActive)}` : "idle";
+  return `${s === best ? "★ " : ""}${state} · ${s.segs} chunks, ${s.hits} loads — ${s.url}`;
 }
 
 async function play(tab, stream) {
@@ -66,7 +68,10 @@ async function setupAutoReload() {
   const streams = (await chrome.storage.session.get(key))[key] || [];
   if (!streams.length) return;
 
-  const best = pickBest(streams);
+  const now = Date.now();
+  const best = pickBest(streams, now);
+  // Strongest feeds first, dead ones last.
+  streams.sort((a, b) => currentScore(b, now) - currentScore(a, now));
   $("playBest").disabled = false;
   $("playBest").textContent = "▶ Play in mpv";
   $("playBest").onclick = () => play(tab, best);
@@ -74,7 +79,7 @@ async function setupAutoReload() {
   for (const s of streams) {
     const li = document.createElement("li");
     const span = document.createElement("span");
-    span.textContent = s.dead ? `✖ dead — ${s.url}` : `${s === best ? "★ " : ""}${s.segs} chunks, ${s.hits} loads — ${s.url}`;
+    span.textContent = describe(s, best, now);
     if (s.dead) span.style.opacity = "0.5";
     span.title = s.url;
     const btn = document.createElement("button");

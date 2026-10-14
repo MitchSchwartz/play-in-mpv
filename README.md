@@ -27,12 +27,18 @@ isn't supported (this is a Chromium Manifest V3 extension).
 Streaming pages often load several playlists — backups, decoys, dead mirrors. Each one is
 scored from real network activity:
 
-- **Video chunks downloaded from its server** — strongest signal; only the live feed gets these.
+- **Video chunks downloaded** — strongest signal; only the live feed gets these. A chunk is
+  credited to a playlist in the same folder, or else to the playlist loaded just before it
+  (players often fetch chunks from a different CDN server than the playlist).
 - **Successful playlist reloads** — live players re-fetch the active playlist every few seconds.
 - **Timeouts / errors** — marked dead and never chosen.
 
-The popup lists every link with its counts and marks the chosen one with ★. You can still play
-any link manually.
+Scores **fade within seconds** when a feed goes quiet, so the pick reflects what's playing *now*.
+If you switch feeds on a page that doesn't reload, the new feed takes over the ★ within a few
+seconds instead of losing to the old feed's history.
+
+The popup lists every link — strongest first, marked **live** or **idle** with its counts — and
+marks the chosen one with ★. You can still play any link manually.
 
 ## How this compares to similar tools
 
@@ -200,7 +206,9 @@ HLS test stream.
 - `mpv/reload.lua` — mpv script for manual and automatic stream reloading
 - `install.sh` — registers the helper with Brave/Chrome/Chromium (Linux and macOS)
 - `install.ps1` — registers the helper with Brave/Chrome/Chromium (Windows)
-- `tests/` — unit tests for the helper: `python -m unittest discover -s tests`
+- `extension/scoring.js` — feed scoring shared by the background worker and popup
+- `tests/` — unit tests: `python -m unittest discover -s tests` (helper) and
+  `node --test tests/test_scoring.js` (feed scoring)
 
 ## Contributing
 

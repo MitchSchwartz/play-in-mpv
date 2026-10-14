@@ -1,5 +1,7 @@
 // Watches network traffic for .m3u8 playlists and remembers them per tab,
 // scoring each one by evidence that it's the feed actually playing.
+importScripts("scoring.js");
+
 const MAX_PER_TAB = 15;
 const SEGMENT_RE = /\.(ts|m4s|m4v|m4a|aac|mp4|fmp4)(\?|$)/i;
 
@@ -48,15 +50,11 @@ function update(tabId, fn) {
   });
 }
 
-function dirOf(url) {
-  const u = new URL(url);
-  return u.origin + u.pathname.replace(/[^/]*$/, "");
-}
-
 function findOrAdd(streams, details) {
   let s = streams.find((x) => x.url === details.url);
   if (!s) {
-    s = { url: details.url, initiator: details.initiator || "", time: Date.now(), hits: 0, segs: 0, dead: false };
+    s = { url: details.url, initiator: details.initiator || "", time: Date.now(), hits: 0, segs: 0, dead: false,
+          score: 0, scoreAt: 0, lastLoad: null, lastActive: null };
     streams.push(s);
   }
   return s;
@@ -70,10 +68,13 @@ chrome.webRequest.onCompleted.addListener(
       tabsWithStreams.add(details.tabId);
       update(details.tabId, (streams) => {
         const s = findOrAdd(streams, details);
-        s.time = Date.now();
+        const now = Date.now();
+        s.time = now;
         if (details.statusCode >= 200 && details.statusCode < 400) {
           s.hits++;
           s.dead = false;
+          s.lastLoad = now;
+          addScore(s, PLAYLIST_WEIGHT, now);
         } else {
           s.dead = true;
         }
@@ -84,17 +85,14 @@ chrome.webRequest.onCompleted.addListener(
       // Players fetch chunks via XHR/fetch; some sites disguise them as .png/.jpg,
       // so any XHR from a known playlist's server counts.
       // A video chunk downloaded: credit the playlist it most likely belongs to
-      // (same folder first, then same server).
+      // (see matchChunk in scoring.js).
       update(details.tabId, (streams) => {
-        if (!streams.length) return false;
-        const dir = dirOf(details.url);
-        const origin = new URL(details.url).origin;
-        const match =
-          streams.find((s) => dir.startsWith(dirOf(s.url))) ||
-          streams.find((s) => new URL(s.url).origin === origin);
+        const now = Date.now();
+        const match = matchChunk(streams, details.url, now);
         if (!match) return false;
         match.segs++;
-        match.time = Date.now();
+        match.time = now;
+        addScore(match, CHUNK_WEIGHT, now);
       });
     }
   },
