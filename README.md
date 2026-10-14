@@ -211,9 +211,9 @@ still apply**. You can close the original tab afterwards.
   and one click unmutes. To always get sound, allow the player's site under
   Settings → Privacy and security → Site and Shields settings → Autoplay.
 - **Fullscreen window** (on by default): opens the window fullscreen. Browsers only allow true
-  video fullscreen after a click, so this fills the screen with the player page instead; the
-  player's own fullscreen button still works on top of it. **Esc** leaves fullscreen (if the
-  player's fullscreen is on, the first Esc exits that, the next one the window).
+  video fullscreen after a click, so this fills the screen with the player page instead; **Esc**,
+  double-click or the player's fullscreen button leave it in one step. After that the player's
+  own fullscreen works as usual.
 - **F5** restarts the player, which also brings back hardware video decoding if the browser
   fell back to the CPU after a glitch.
 

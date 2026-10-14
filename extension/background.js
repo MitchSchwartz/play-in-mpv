@@ -111,8 +111,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     openPopout(msg).catch((e) => console.warn("pop-out failed", e));
     return;
   }
-  if (msg && msg.type === "popoutEscape" && sender.tab) {
-    exitPopoutFullscreen(sender.tab);
+  if (msg && msg.type === "popoutFullscreen" && sender.tab) {
+    onPopoutFullscreenEvent(sender, msg.event);
     return;
   }
   if (msg && msg.type === "browserOnly") {
@@ -228,7 +228,8 @@ async function openPopout({ src, ref, autoplay = true, fullscreen = true }) {
   }
   await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: popoutRuleIds(tabId), addRules });
   const popouts = await getPopouts();
-  popouts[tabId] = { src, autoplay };
+  // windowFullscreen: the window is in the fullscreen *we* set (not the player's).
+  popouts[tabId] = { src, autoplay, windowFullscreen: fullscreen };
   await chrome.storage.session.set({ [POPOUTS_KEY]: popouts });
   await chrome.tabs.update(tabId, { url: src });
 }
@@ -257,30 +258,43 @@ chrome.webNavigation.onCompleted.addListener(async (details) => {
   const popout = (await getPopouts())[details.tabId];
   if (!popout) return;
   const target = { tabId: details.tabId, frameIds: [details.frameId] };
-  chrome.scripting.executeScript({ target, func: watchEscape }).catch(() => {});
+  chrome.scripting.executeScript({ target, func: watchFullscreen }).catch(() => {});
   if (popout.autoplay) chrome.scripting.executeScript({ target, func: startPlayback }).catch(() => {});
 });
 
-// A window made fullscreen by an extension doesn't leave fullscreen on Esc (the
-// browser hands the key to the page), so the page tells us and we do it. When the
-// player's own fullscreen is on, the browser handles that Esc itself first.
-function watchEscape() {
-  if (window.__playInMpvEscape) return;
-  window.__playInMpvEscape = true;
+// The pop-out can be fullscreen two ways: the window fullscreen we set when opening
+// it, and the player's own fullscreen. They look identical, so while ours is on,
+// treat them as one: Esc, double-click or the player's fullscreen button all leave
+// fullscreen in one step. Once out, the player's fullscreen behaves normally.
+// (A window made fullscreen by an extension also ignores Esc on its own — the
+// browser hands the key to the page — hence the Esc listener.)
+function watchFullscreen() {
+  if (window.__playInMpvFullscreen) return;
+  window.__playInMpvFullscreen = true;
+  const send = (event) => chrome.runtime.sendMessage({ type: "popoutFullscreen", event }).catch(() => {});
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !document.fullscreenElement) {
-      chrome.runtime.sendMessage({ type: "popoutEscape" }).catch(() => {});
-    }
+    if (e.key === "Escape" && !document.fullscreenElement) send("escape");
   }, true);
+  document.addEventListener("fullscreenchange", () => {
+    send(document.fullscreenElement ? "playerEntered" : "playerExited");
+  });
 }
 
-async function exitPopoutFullscreen(tab) {
-  if (!((await getPopouts())[tab.id])) return;
-  const win = await chrome.windows.get(tab.windowId);
-  if (win.state === "fullscreen") {
-    await chrome.windows.update(tab.windowId, { state: "normal" });
-    chrome.windows.update(tab.windowId, { width: 1024, height: 576 }).catch(() => {});
+async function onPopoutFullscreenEvent(sender, event) {
+  const popouts = await getPopouts();
+  const popout = popouts[sender.tab.id];
+  if (!popout || !popout.windowFullscreen) return; // not ours: let the player handle it
+  popout.windowFullscreen = false;
+  await chrome.storage.session.set({ [POPOUTS_KEY]: popouts });
+  if (event === "playerEntered") {
+    // Already looked fullscreen, so this was meant as "leave": undo the player's too.
+    chrome.scripting.executeScript({
+      target: { tabId: sender.tab.id, allFrames: true },
+      func: () => document.fullscreenElement && document.exitFullscreen().catch(() => {}),
+    }).catch(() => {});
   }
+  await chrome.windows.update(sender.tab.windowId, { state: "normal" });
+  chrome.windows.update(sender.tab.windowId, { width: 1024, height: 576 }).catch(() => {});
 }
 
 // Runs inside the player page. Players often build the <video> late or wait for a
