@@ -105,10 +105,14 @@ chrome.webRequest.onCompleted.addListener(
 
 // The popup marks feeds the helper found to be image-disguised ("browser only").
 // Done here so it goes through the same per-tab queue as network updates.
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === "popOut") {
     sendResponse({ ok: true }); // the popup closes as soon as the new window takes focus
     openPopout(msg).catch((e) => console.warn("pop-out failed", e));
+    return;
+  }
+  if (msg && msg.type === "popoutEscape" && sender.tab) {
+    exitPopoutFullscreen(sender.tab);
     return;
   }
   if (msg && msg.type === "browserOnly") {
@@ -247,14 +251,37 @@ chrome.tabs.onCreated.addListener(async (tab) => {
   }
 });
 
-// Auto-play: once each page or frame in a pop-out finishes loading, start its video.
+// Once each page or frame in a pop-out finishes loading: watch for Esc (always),
+// and start its video (if auto-play is on).
 chrome.webNavigation.onCompleted.addListener(async (details) => {
-  if (!(await getPopouts())[details.tabId]?.autoplay) return;
-  chrome.scripting.executeScript({
-    target: { tabId: details.tabId, frameIds: [details.frameId] },
-    func: startPlayback,
-  }).catch(() => {});
+  const popout = (await getPopouts())[details.tabId];
+  if (!popout) return;
+  const target = { tabId: details.tabId, frameIds: [details.frameId] };
+  chrome.scripting.executeScript({ target, func: watchEscape }).catch(() => {});
+  if (popout.autoplay) chrome.scripting.executeScript({ target, func: startPlayback }).catch(() => {});
 });
+
+// A window made fullscreen by an extension doesn't leave fullscreen on Esc (the
+// browser hands the key to the page), so the page tells us and we do it. When the
+// player's own fullscreen is on, the browser handles that Esc itself first.
+function watchEscape() {
+  if (window.__playInMpvEscape) return;
+  window.__playInMpvEscape = true;
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !document.fullscreenElement) {
+      chrome.runtime.sendMessage({ type: "popoutEscape" }).catch(() => {});
+    }
+  }, true);
+}
+
+async function exitPopoutFullscreen(tab) {
+  if (!((await getPopouts())[tab.id])) return;
+  const win = await chrome.windows.get(tab.windowId);
+  if (win.state === "fullscreen") {
+    await chrome.windows.update(tab.windowId, { state: "normal" });
+    chrome.windows.update(tab.windowId, { width: 1024, height: 576 }).catch(() => {});
+  }
+}
 
 // Runs inside the player page. Players often build the <video> late or wait for a
 // click on their big play button, so retry for a while. If the browser blocks
