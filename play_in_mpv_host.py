@@ -253,6 +253,12 @@ def main():
     # Don't open an mpv window for a feed whose video is hidden in images.
     if msg.get("probe", True):
         image = probe_stream(msg)
+        try:
+            os.makedirs(os.path.dirname(LOG), exist_ok=True)
+            with open(LOG, "a") as plog:
+                plog.write("\n--- check %s: %s\n" % (url, ("video hidden in %s images, not launching" % image) if image else "ok"))
+        except OSError:
+            pass
         if image:
             send_message({"ok": False, "browserOnly": True,
                           "error": "This feed hides its video in %s images; mpv can't play it" % image})
