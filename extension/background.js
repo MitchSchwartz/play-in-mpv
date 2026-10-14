@@ -105,7 +105,12 @@ chrome.webRequest.onCompleted.addListener(
 
 // The popup marks feeds the helper found to be image-disguised ("browser only").
 // Done here so it goes through the same per-tab queue as network updates.
-chrome.runtime.onMessage.addListener((msg) => {
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg && msg.type === "popOut") {
+    sendResponse({ ok: true }); // the popup closes as soon as the new window takes focus
+    openPopout(msg).catch((e) => console.warn("pop-out failed", e));
+    return;
+  }
   if (msg && msg.type === "browserOnly") {
     update(msg.tabId, (streams) => {
       const s = streams.find((x) => x.url === msg.url);
@@ -174,6 +179,80 @@ chrome.tabs.onUpdated.addListener(async (tabId, info) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   tabsWithStreams.delete(tabId);
   chrome.storage.session.remove(`tab_${tabId}`);
-  // A pop-out player window closed: drop its header rule (rule id = tab id).
-  chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [tabId] }).catch(() => {});
+  forgetPopout(tabId);
+});
+
+// ---- Pop-out player windows ----
+// A pop-out is a normal popup window showing only the player's own page, so Brave
+// Shields apply as usual. For that window only (session rules keyed by tab id):
+//  - requests for the player page carry the embedding page as Referer, since
+//    embeds often refuse to load without it;
+//  - navigating the window to any other site is blocked (click-hijack ads), and
+//    the player is put back;
+// and any tab or window the player tries to open is closed (pop-up ads).
+const POPOUTS_KEY = "popouts";
+const popoutRuleIds = (tabId) => [tabId * 2 + 1, tabId * 2 + 2];
+
+async function getPopouts() {
+  return (await chrome.storage.session.get(POPOUTS_KEY))[POPOUTS_KEY] || {};
+}
+
+async function openPopout({ src, ref }) {
+  if (!/^https?:/i.test(src)) return;
+  const host = new URL(src).hostname;
+  const hosts = [...new Set([host, host.replace(/^www\./, "")])];
+  const win = await chrome.windows.create({ url: "about:blank", type: "popup", width: 1024, height: 576 });
+  const tabId = win.tabs[0].id;
+  const [refRule, blockRule] = popoutRuleIds(tabId);
+  const addRules = [{
+    id: blockRule,
+    priority: 2,
+    action: { type: "block" },
+    condition: { tabIds: [tabId], resourceTypes: ["main_frame"], excludedRequestDomains: hosts },
+  }];
+  if (ref && /^https?:/i.test(ref)) {
+    addRules.push({
+      id: refRule,
+      priority: 1,
+      action: { type: "modifyHeaders", requestHeaders: [{ header: "referer", operation: "set", value: ref }] },
+      condition: { tabIds: [tabId], resourceTypes: ["main_frame"], requestDomains: hosts },
+    });
+  }
+  await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: popoutRuleIds(tabId), addRules });
+  const popouts = await getPopouts();
+  popouts[tabId] = src;
+  await chrome.storage.session.set({ [POPOUTS_KEY]: popouts });
+  await chrome.tabs.update(tabId, { url: src });
+}
+
+async function forgetPopout(tabId) {
+  const popouts = await getPopouts();
+  if (!(tabId in popouts)) return;
+  delete popouts[tabId];
+  await chrome.storage.session.set({ [POPOUTS_KEY]: popouts });
+  chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: popoutRuleIds(tabId) }).catch(() => {});
+}
+
+// Pop-up ads: close any tab/window opened from a pop-out.
+chrome.webNavigation.onCreatedNavigationTarget.addListener(async (details) => {
+  if (String(details.sourceTabId) in (await getPopouts())) chrome.tabs.remove(details.tabId).catch(() => {});
+});
+chrome.tabs.onCreated.addListener(async (tab) => {
+  if (tab.openerTabId != null && String(tab.openerTabId) in (await getPopouts())) {
+    chrome.tabs.remove(tab.id).catch(() => {});
+  }
+});
+
+// A blocked navigation leaves an error page in the window: put the player back.
+// If the player itself redirects off-site, restoring would loop, so give up when
+// it happens again within a few seconds.
+const lastRestore = {};
+chrome.webNavigation.onErrorOccurred.addListener(async (details) => {
+  if (details.frameId !== 0 || !/BLOCKED_BY_CLIENT/.test(details.error)) return;
+  const src = (await getPopouts())[details.tabId];
+  if (!src) return;
+  const now = Date.now();
+  if (now - (lastRestore[details.tabId] || 0) < 5000) return;
+  lastRestore[details.tabId] = now;
+  chrome.tabs.update(details.tabId, { url: src }).catch(() => {});
 });

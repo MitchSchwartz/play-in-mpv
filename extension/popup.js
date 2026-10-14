@@ -69,8 +69,9 @@ function pauseBrowserVideo(tab) {
   }).catch(() => {});
 }
 
-// Open only the player frame that loaded this feed in its own window (player.html),
-// passing the page that embedded it so the embed still sees the right Referer.
+// Open only the player frame that loaded this feed as its own popup window (a normal
+// page, so Brave Shields apply). background.js opens and guards the window, passing
+// the page that embedded the player as Referer.
 async function popOut(tab, stream) {
   let src = tab.url;
   let ref = "";
@@ -84,10 +85,8 @@ async function popOut(tab, stream) {
       ref = parent && /^https?:/i.test(parent.url) ? parent.url : tab.url;
     }
   }
-  const url = chrome.runtime.getURL("player.html") + "?" +
-    new URLSearchParams({ src, ref, title: tab.title || "Player" });
-  await chrome.windows.create({ url, type: "popup", width: 1024, height: 610 });
   await pauseBrowserVideo(tab);
+  await chrome.runtime.sendMessage({ type: "popOut", src, ref });
   window.close();
 }
 

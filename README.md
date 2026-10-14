@@ -201,15 +201,18 @@ HLS test stream.
 
 ### Pop out player (feeds mpv can't play)
 
-**⧉ Pop out player** opens just the site's video player in its own small window, without
-the rest of the page (ads, chat, scripts), and pauses the original tab's video. Use it for
-feeds marked 🖼 browser only. The window's **⟳ Reload player** button (or **R**) restarts the
-player, which also brings back hardware video decoding if the browser fell back to the CPU
-after a glitch. **Hide bar** (or **B**) hides the top bar.
+**⧉ Pop out player** opens just the site's video player page in its own small window, without
+the rest of the site (ads, chat, scripts), and pauses the original tab's video. Use it for feeds
+marked 🖼 browser only. It's a normal page, so **Brave Shields still apply**. Press **F5** in the
+window to restart the player, which also brings back hardware video decoding if the browser fell
+back to the CPU after a glitch.
 
-Embeds often only play inside their own site, so for that window only the extension sends the
-original page as the referrer and removes the headers that forbid framing. The rule is
-removed when the window closes.
+For that window only, the extension:
+
+- sends the original page as the referrer, since embeds often refuse to load without it;
+- blocks clicks that try to take the window to another site (click-hijack ads) and puts the
+  player back;
+- closes any tab or window the player tries to open (pop-up ads).
 
 ### Reloading a jammed stream
 
@@ -231,7 +234,6 @@ removed when the window closes.
 - `mpv/reload.lua` — mpv script for manual and automatic stream reloading
 - `install.sh` — registers the helper with Brave/Chrome/Chromium (Linux and macOS)
 - `install.ps1` — registers the helper with Brave/Chrome/Chromium (Windows)
-- `extension/player.html`, `player.js` — the pop-out player window
 - `extension/scoring.js` — feed scoring shared by the background worker and popup
 - `tests/` — unit tests: `python -m unittest discover -s tests` (helper) and
   `node --test tests/test_scoring.js` (feed scoring)
