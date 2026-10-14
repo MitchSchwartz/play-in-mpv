@@ -1,7 +1,7 @@
 // Tests for extension/scoring.js. Run from the repo root:  node --test tests/
 const test = require("node:test");
 const assert = require("node:assert");
-const { pruneGone, addScore, pickBest, isLive, matchChunk, currentScore, PLAYLIST_WEIGHT, CHUNK_WEIGHT } = require("../extension/scoring.js");
+const { rankFeeds, pruneGone, addScore, pickBest, isLive, matchChunk, currentScore, PLAYLIST_WEIGHT, CHUNK_WEIGHT } = require("../extension/scoring.js");
 
 function feed(url) {
   return { url, hits: 0, segs: 0, dead: false, score: 0, scoreAt: 0, lastLoad: null, lastActive: null };
@@ -97,4 +97,16 @@ test("chunks only credit playlists from the same player document", () => {
   assert.strictEqual(matchChunk([other, mine], "https://cdn.example/live/a/seg.ts", 5500, "DOC-2"), mine);
   // Without a document id, falls back to folder matching.
   assert.strictEqual(matchChunk([other, mine], "https://cdn.example/live/a/seg.ts", 5500), other);
+});
+
+test("main button skips dead and browser-only feeds, best first", () => {
+  const img = { ...feed("https://a.example/img.m3u8"), browserOnly: true };
+  addScore(img, CHUNK_WEIGHT * 5, 1000); // strongest, but mpv can't play it
+  const good = feed("https://b.example/good.m3u8");
+  addScore(good, CHUNK_WEIGHT, 1000);
+  const weak = feed("https://c.example/weak.m3u8");
+  addScore(weak, PLAYLIST_WEIGHT, 1000);
+  const dead = { ...feed("https://d.example/dead.m3u8"), dead: true };
+  assert.deepStrictEqual(rankFeeds([img, weak, dead, good], 1000).map((s) => s.url), [good.url, weak.url]);
+  assert.strictEqual(pickBest([img, weak, dead, good], 1000), good);
 });

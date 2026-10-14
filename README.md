@@ -38,7 +38,9 @@ feed without reloading the page, the old player's links are dropped, and chunks 
 toward playlists from the same player.
 
 Some feeds hide their video inside real image files (PNG/WebP on an image CDN) that only the
-site's own player can unpack. mpv can't play these; the popup marks them **🖼 browser only**.
+site's own player can unpack, and mpv can't play them. Before opening mpv, the helper reads the
+first 16 bytes of the feed's first chunk; if it's an image, it refuses and **▶ Play in mpv**
+moves on to the next-best feed. Those feeds are marked **🖼 browser only**.
 
 Scores **fade within seconds** when a feed goes quiet, so the pick reflects what's playing *now*.
 If you switch feeds on a page that doesn't reload, the new feed takes over the ★ within a few

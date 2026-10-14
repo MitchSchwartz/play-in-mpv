@@ -97,22 +97,23 @@ chrome.webRequest.onCompleted.addListener(
         match.segs++;
         match.time = now;
         addScore(match, CHUNK_WEIGHT, now);
-        if (isImageChunk(details)) match.imageChunks = (match.imageChunks || 0) + 1;
       });
     }
   },
-  { urls: ["<all_urls>"], types: REQUEST_TYPES },
-  ["responseHeaders"]
+  { urls: ["<all_urls>"], types: REQUEST_TYPES }
 );
 
-// Some feeds hide their video inside real image files (e.g. PNGs on an image CDN)
-// that only the site's own player can unpack; mpv can't play those. A large chunk
-// served as image/* marks the feed so the popup can say so.
-function isImageChunk(details) {
-  const header = (name) =>
-    (details.responseHeaders || []).find((h) => h.name.toLowerCase() === name)?.value || "";
-  return header("content-type").toLowerCase().startsWith("image/") && Number(header("content-length") || 0) > 100000;
-}
+// The popup marks feeds the helper found to be image-disguised ("browser only").
+// Done here so it goes through the same per-tab queue as network updates.
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg && msg.type === "browserOnly") {
+    update(msg.tabId, (streams) => {
+      const s = streams.find((x) => x.url === msg.url);
+      if (!s) return false;
+      s.browserOnly = true;
+    });
+  }
+});
 
 // Playlist failed to load (timeout, DNS, connection refused): mark dead.
 chrome.webRequest.onErrorOccurred.addListener(

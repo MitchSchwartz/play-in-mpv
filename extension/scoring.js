@@ -23,7 +23,15 @@ function addScore(s, weight, now) {
 }
 
 function pickBest(streams, now) {
-  return streams.reduce((best, s) => (currentScore(s, now) > currentScore(best, now) ? s : best), streams[0]);
+  return rankFeeds(streams, now)[0] || streams[0];
+}
+
+// Feeds the main button should try, best first: skips dead feeds and ones already
+// found to be image-disguised (mpv can't play those).
+function rankFeeds(streams, now) {
+  return streams
+    .filter((s) => !s.dead && !s.browserOnly)
+    .sort((a, b) => currentScore(b, now) - currentScore(a, now));
 }
 
 function isLive(s, now) {
@@ -63,5 +71,5 @@ function matchChunk(streams, chunkUrl, now, documentId) {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { pruneGone, currentScore, addScore, pickBest, isLive, matchChunk, dirOf, DECAY_MS, PLAYLIST_WEIGHT, CHUNK_WEIGHT };
+  module.exports = { rankFeeds, pruneGone, currentScore, addScore, pickBest, isLive, matchChunk, dirOf, DECAY_MS, PLAYLIST_WEIGHT, CHUNK_WEIGHT };
 }

@@ -7,6 +7,8 @@ import shutil
 import struct
 import subprocess
 import sys
+import urllib.parse
+import urllib.request
 
 LOG = os.path.expanduser("~/.cache/play-in-mpv.log")
 # Shared with every running mpv window: reload.lua polls it, so a toggle in the
@@ -67,6 +69,75 @@ def mpv_executable(environ, platform=sys.platform, which=shutil.which, exists=os
                 return candidate
     # Not found: return the bare name so the launch error stays loud and gets logged.
     return "mpv"
+
+
+# Magic bytes of image formats some feeds use to hide video chunks. Only the site's
+# own player can unpack those, so mpv would just fail on them.
+IMAGE_SIGNATURES = (
+    (b"\x89PNG\r\n\x1a\n", "png"),
+    (b"\xff\xd8\xff", "jpeg"),
+    (b"GIF87a", "gif"),
+    (b"GIF89a", "gif"),
+)
+PROBE_TIMEOUT = 6
+
+
+def sniff_image(head):
+    """Return the image format name if these leading bytes are an image, else None."""
+    for sig, name in IMAGE_SIGNATURES:
+        if head.startswith(sig):
+            return name
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
+def first_uri(playlist_text, base_url):
+    """First URI in an HLS playlist (a variant in a master playlist, else a segment),
+    resolved against the playlist URL. Returns (uri, is_master)."""
+    lines = [l.strip() for l in playlist_text.splitlines()]
+    is_master = any(l.startswith("#EXT-X-STREAM-INF") for l in lines)
+    for l in lines:
+        if l and not l.startswith("#"):
+            return urllib.parse.urljoin(base_url, l), is_master
+    return None, is_master
+
+
+def probe_headers(msg):
+    headers = {"User-Agent": msg.get("userAgent") or "Mozilla/5.0"}
+    if msg.get("referrer"):
+        headers["Referer"] = msg["referrer"]
+    if msg.get("origin"):
+        headers["Origin"] = msg["origin"]
+    return headers
+
+
+def fetch(url, headers, limit=None):
+    req = urllib.request.Request(url, headers=dict(headers, **({"Range": "bytes=0-%d" % (limit - 1)} if limit else {})))
+    with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT) as resp:
+        return resp.read(limit) if limit else resp.read(2_000_000)
+
+
+def probe_stream(msg, fetch=fetch):
+    """Check the feed's first chunk. Returns an image format name if the video is
+    disguised as images (mpv can't play it), else None. Network problems return
+    None so mpv still gets a try."""
+    headers = probe_headers(msg)
+    url = msg["url"]
+    try:
+        for _ in range(3):  # master -> variant -> segment
+            text = fetch(url, headers).decode("utf-8", "replace")
+            if "#EXT-X-KEY" in text and "METHOD=NONE" not in text:
+                return None  # encrypted chunks can't be sniffed
+            nxt, is_master = first_uri(text, url)
+            if not nxt:
+                return None
+            if not is_master:
+                return sniff_image(fetch(nxt, headers, limit=16))
+            url = nxt
+    except Exception:
+        return None
+    return None
 
 
 def write_settings(path, auto_reload):
@@ -140,6 +211,14 @@ def main():
             write_settings(SETTINGS, bool(msg["autoReload"]))
         except OSError:
             pass  # reload.lua defaults to on; don't block playback over this
+
+    # Don't open an mpv window for a feed whose video is hidden in images.
+    if msg.get("probe", True):
+        image = probe_stream(msg)
+        if image:
+            send_message({"ok": False, "browserOnly": True,
+                          "error": "This feed hides its video in %s images; mpv can't play it" % image})
+            return
 
     cmd = build_command(msg, mpv_executable(os.environ))
 

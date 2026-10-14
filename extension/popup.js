@@ -13,35 +13,9 @@ function ago(ms) {
 
 function describe(s, best, now) {
   if (s.dead) return `✖ dead — ${s.url}`;
-  if (s.imageChunks) return `🖼 browser only — ${s.url}`;
+  if (s.browserOnly) return `🖼 browser only — ${s.url}`;
   const state = isLive(s, now) ? "live" : s.lastActive ? `idle ${ago(now - s.lastActive)}` : "idle";
   return `${s === best ? "★ " : ""}${state} · ${s.segs} chunks, ${s.hits} loads — ${s.url}`;
-}
-
-async function play(tab, stream) {
-  status("Launching mpv…");
-  const referrer = stream.initiator ? stream.initiator + "/" : tab.url;
-  try {
-    const res = await chrome.runtime.sendNativeMessage(HOST, {
-      url: stream.url,
-      referrer,
-      origin: stream.initiator || "",
-      userAgent: navigator.userAgent,
-      title: tab.title || "Stream",
-      autoReload: $("autoReload").checked,
-    });
-    if (!res || !res.ok) throw new Error(res && res.error ? res.error : "No response from helper");
-  } catch (e) {
-    status("Failed: " + e.message + "\nLog: ~/.cache/play-in-mpv.log", true);
-    return;
-  }
-  if ($("pause").checked) {
-    chrome.scripting.executeScript({
-      target: { tabId: tab.id, allFrames: true },
-      func: () => document.querySelectorAll("video").forEach((v) => { v.pause(); v.muted = true; }),
-    }).catch(() => {});
-  }
-  status("Playing in mpv ✔");
 }
 
 // Auto-reload toggle: saved in the extension and pushed to the helper, which
@@ -62,6 +36,63 @@ async function setupAutoReload() {
   };
 }
 
+// Ask the helper to play one feed. It checks the feed's first chunk and refuses
+// (browserOnly) if the video is hidden in images, without opening mpv.
+async function launch(tab, stream) {
+  try {
+    const res = await chrome.runtime.sendNativeMessage(HOST, {
+      url: stream.url,
+      referrer: stream.initiator ? stream.initiator + "/" : tab.url,
+      origin: stream.initiator || "",
+      userAgent: navigator.userAgent,
+      title: tab.title || "Stream",
+      autoReload: $("autoReload").checked,
+    });
+    return res || { ok: false, error: "No response from helper" };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function markBrowserOnly(tab, stream) {
+  stream.browserOnly = true;
+  chrome.runtime.sendMessage({ type: "browserOnly", tabId: tab.id, url: stream.url }).catch(() => {});
+}
+
+function pauseBrowserVideo(tab) {
+  if (!$("pause").checked) return;
+  chrome.scripting.executeScript({
+    target: { tabId: tab.id, allFrames: true },
+    func: () => document.querySelectorAll("video").forEach((v) => { v.pause(); v.muted = true; }),
+  }).catch(() => {});
+}
+
+// Try feeds best-first; skip any the helper reports as image-disguised.
+async function playFeeds(tab, candidates, render) {
+  $("playBest").disabled = true;
+  for (let i = 0; i < candidates.length; i++) {
+    const s = candidates[i];
+    status(candidates.length > 1 ? `Checking feed ${i + 1} of ${candidates.length}…` : "Launching mpv…");
+    const res = await launch(tab, s);
+    if (res.ok) {
+      pauseBrowserVideo(tab);
+      status("Playing in mpv ✔");
+      render(s);
+      $("playBest").disabled = false;
+      return;
+    }
+    if (!res.browserOnly) {
+      status("Failed: " + res.error + "\nLog: ~/.cache/play-in-mpv.log", true);
+      $("playBest").disabled = false;
+      return;
+    }
+    markBrowserOnly(tab, s);
+    render();
+  }
+  status("Every feed found on this page hides its video in images, which mpv can't play. " +
+    "Switch to another feed on the site, or watch this one in the browser.", true);
+}
+
 (async () => {
   await setupAutoReload();
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -80,27 +111,32 @@ async function setupAutoReload() {
   if (!streams.length) return;
 
   const now = Date.now();
-  const best = pickBest(streams, now);
-  // Strongest feeds first, dead ones last.
+  // Strongest feeds first.
   streams.sort((a, b) => currentScore(b, now) - currentScore(a, now));
+
+  function render(playing) {
+    const best = playing || pickBest(streams, now);
+    $("list").replaceChildren();
+    for (const s of streams) {
+      const li = document.createElement("li");
+      const span = document.createElement("span");
+      span.textContent = describe(s, best, now);
+      if (s.dead || s.browserOnly) span.style.opacity = "0.5";
+      span.title = s.url;
+      const btn = document.createElement("button");
+      btn.textContent = "Play";
+      btn.onclick = () => playFeeds(tab, [s], render);
+      li.append(span, btn);
+      $("list").append(li);
+    }
+  }
+  render();
+
+  if (!rankFeeds(streams, now).length) {
+    status("No playable feed: the ones found are dead or hide their video in images.", true);
+    return;
+  }
   $("playBest").disabled = false;
   $("playBest").textContent = "▶ Play in mpv";
-  $("playBest").onclick = () => play(tab, best);
-  if (best.imageChunks) {
-    status("This feed hides its video inside image files, which only the site's player can unpack — " +
-      "mpv can't play it. Try another feed on the site, or watch it in the browser.", true);
-  }
-
-  for (const s of streams) {
-    const li = document.createElement("li");
-    const span = document.createElement("span");
-    span.textContent = describe(s, best, now);
-    if (s.dead) span.style.opacity = "0.5";
-    span.title = s.url;
-    const btn = document.createElement("button");
-    btn.textContent = "Play";
-    btn.onclick = () => play(tab, s);
-    li.append(span, btn);
-    $("list").append(li);
-  }
+  $("playBest").onclick = () => playFeeds(tab, rankFeeds(streams, now), render);
 })();
