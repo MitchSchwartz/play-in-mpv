@@ -146,7 +146,7 @@ class BuildCommandTest(unittest.TestCase):
         self.assertIn("--force-media-title=My Stream", cmd)
         self.assertIn("--referrer=https://example.com/watch", cmd)
         self.assertIn("--user-agent=TestAgent/1.0", cmd)
-        self.assertIn("--http-header-fields=Origin: https://example.com", cmd)
+        self.assertIn("--http-header-fields-append=Origin: https://example.com", cmd)
 
     def test_optional_fields_omitted(self):
         cmd = host.build_command({"url": MSG["url"]}, "mpv")
@@ -200,6 +200,46 @@ class SettingsTest(unittest.TestCase):
         with open(os.path.join(self.tmp, ".cache", "play-in-mpv-settings")) as f:
             self.assertEqual(f.read(), "auto_reload=no\n")
         self.assertFalse(os.path.exists(os.path.join(self.tmp, ".cache", "play-in-mpv.log")))
+
+
+class BrowserHeadersTest(unittest.TestCase):
+    HEADERS = [
+        ["User-Agent", "BrowserUA/2"],
+        ["Referer", "https://player.example/embed/123"],
+        ["Origin", "https://player.example"],
+        ["Cookie", "session=abc; token=x,y"],
+        ["X-Security-Token", "s3cret"],
+    ]
+
+    def test_browser_headers_win_over_fallbacks(self):
+        cmd = host.build_command(dict(MSG, headers=self.HEADERS), "mpv")
+        self.assertIn("--user-agent=BrowserUA/2", cmd)
+        self.assertIn("--referrer=https://player.example/embed/123", cmd)
+        self.assertIn("--http-header-fields-append=Origin: https://player.example", cmd)
+        self.assertIn("--http-header-fields-append=Cookie: session=abc; token=x,y", cmd)
+        self.assertIn("--http-header-fields-append=X-Security-Token: s3cret", cmd)
+        self.assertNotIn("--user-agent=TestAgent/1.0", cmd)
+
+    def test_header_injection_dropped(self):
+        bad = [["X-A", "ok"], ["X-B", "evil\r\nX-Injected: 1"], ["Bad Name", "v"], ["X-C", 5]]
+        pairs = host.request_headers({"headers": bad})
+        self.assertEqual(pairs, [("X-A", "ok")])
+
+    def test_secrets_redacted_in_log(self):
+        cmd = host.build_command(dict(MSG, headers=self.HEADERS), "mpv")
+        logged = " ".join(host.redact(cmd))
+        self.assertNotIn("session=abc", logged)
+        self.assertIn("Cookie: <redacted>", logged)
+        self.assertNotIn("s3cret", logged)
+        self.assertIn("Origin: https://player.example", logged)
+
+    def test_probe_uses_browser_headers(self):
+        headers = host.probe_headers(dict(MSG, headers=self.HEADERS))
+        self.assertEqual(headers["Cookie"], "session=abc; token=x,y")
+        self.assertEqual(headers["Referer"], "https://player.example/embed/123")
+
+    def test_ytdl_disabled(self):
+        self.assertIn("--ytdl=no", host.build_command(MSG, "mpv"))
 
 
 class ProbeTest(unittest.TestCase):

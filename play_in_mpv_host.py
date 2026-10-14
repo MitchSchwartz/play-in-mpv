@@ -3,6 +3,7 @@
 import json
 import ntpath
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -103,13 +104,49 @@ def first_uri(playlist_text, base_url):
     return None, is_master
 
 
+HEADER_NAME = re.compile(r"^[A-Za-z0-9!#$%&'*+.^_`|~-]+$")
+# Header values safe to write to the log; everything else (cookies, tokens) is hidden.
+LOGGABLE_HEADERS = ("origin", "accept", "accept-language")
+
+
+def request_headers(msg):
+    """Headers to send for the stream, as (name, value) pairs.
+
+    Prefer the exact headers the browser sent for the playlist (msg["headers"]):
+    many streams check a cookie or a token header that the site's player adds.
+    Otherwise fall back to referrer / origin / user agent. Invalid names and
+    values containing line breaks are dropped so nothing can inject headers.
+    """
+    pairs = []
+    if isinstance(msg.get("headers"), list):
+        for item in msg["headers"]:
+            if isinstance(item, list) and len(item) == 2 and all(isinstance(x, str) for x in item):
+                pairs.append((item[0], item[1]))
+    if not pairs:
+        if msg.get("userAgent"):
+            pairs.append(("User-Agent", msg["userAgent"]))
+        if msg.get("referrer"):
+            pairs.append(("Referer", msg["referrer"]))
+        if msg.get("origin"):
+            pairs.append(("Origin", msg["origin"]))
+    return [(n, v) for n, v in pairs if HEADER_NAME.match(n) and not re.search(r"[\r\n\0]", v)]
+
+
 def probe_headers(msg):
-    headers = {"User-Agent": msg.get("userAgent") or "Mozilla/5.0"}
-    if msg.get("referrer"):
-        headers["Referer"] = msg["referrer"]
-    if msg.get("origin"):
-        headers["Origin"] = msg["origin"]
+    headers = dict(request_headers(msg))
+    headers.setdefault("User-Agent", "Mozilla/5.0")
     return headers
+
+
+def redact(cmd):
+    """Command line for the log, with cookie/token header values hidden."""
+    out = []
+    for arg in cmd:
+        m = re.match(r"^(--http-header-fields-append=)([^:]+):", arg)
+        if m and m.group(2).strip().lower() not in LOGGABLE_HEADERS:
+            arg = m.group(1) + m.group(2) + ": <redacted>"
+        out.append(arg)
+    return out
 
 
 def fetch(url, headers, limit=None):
@@ -150,10 +187,6 @@ def write_settings(path, auto_reload):
 
 
 def build_command(msg, mpv, settings=SETTINGS):
-    headers = []
-    if msg.get("origin"):
-        headers.append("Origin: " + msg["origin"])
-
     cmd = [
         mpv,
         "--hwdec=auto-safe",
@@ -168,13 +201,18 @@ def build_command(msg, mpv, settings=SETTINGS):
         "--script=" + os.path.join(os.path.dirname(os.path.realpath(__file__)), "mpv", "reload.lua"),
         "--script-opts=play_in_mpv-settings=" + settings,
         "--force-media-title=" + msg.get("title", "Stream"),
+        # These are raw stream URLs; yt-dlp can't add anything and only slows failures.
+        "--ytdl=no",
     ]
-    if msg.get("referrer"):
-        cmd.append("--referrer=" + msg["referrer"])
-    if msg.get("userAgent"):
-        cmd.append("--user-agent=" + msg["userAgent"])
-    if headers:
-        cmd.append("--http-header-fields=" + ",".join(headers))
+    for name, value in request_headers(msg):
+        lower = name.lower()
+        if lower == "user-agent":
+            cmd.append("--user-agent=" + value)
+        elif lower == "referer":
+            cmd.append("--referrer=" + value)
+        else:
+            # -append adds one header per option, so commas in values (cookies) are safe.
+            cmd.append("--http-header-fields-append=%s: %s" % (name, value))
     cmd.append(msg["url"])
     return cmd
 
@@ -224,7 +262,7 @@ def main():
 
     os.makedirs(os.path.dirname(LOG), exist_ok=True)
     log = open(LOG, "a")
-    log.write("\n=== " + " ".join(cmd) + "\n")
+    log.write("\n=== " + " ".join(redact(cmd)) + "\n")
     log.flush()
     try:
         subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=log, stderr=log, **popen_kwargs(sys.platform))

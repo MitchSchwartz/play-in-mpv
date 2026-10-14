@@ -42,6 +42,10 @@ site's own player can unpack, and mpv can't play them. Before opening mpv, the h
 first 16 bytes of the feed's first chunk; if it's an image, it refuses and **▶ Play in mpv**
 moves on to the next-best feed. Those feeds are marked **🖼 browser only**.
 
+mpv is given **the exact headers the browser sent** for the playlist — cookies, referrer and
+any token header the site's player adds — since many stream servers reject requests without
+them ("Invalid Security Token"). Cookie and token values are redacted from the log.
+
 Scores **fade within seconds** when a feed goes quiet, so the pick reflects what's playing *now*.
 If you switch feeds on a page that doesn't reload, the new feed takes over the ★ within a few
 seconds instead of losing to the old feed's history.

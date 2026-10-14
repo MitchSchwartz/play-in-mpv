@@ -47,6 +47,8 @@ async function launch(tab, stream) {
       userAgent: navigator.userAgent,
       title: tab.title || "Stream",
       autoReload: $("autoReload").checked,
+      // Exact headers the browser sent for this playlist (cookies, tokens, referer).
+      headers: stream.headers || null,
     });
     return res || { ok: false, error: "No response from helper" };
   } catch (e) {

@@ -115,6 +115,27 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 });
 
+// Record the exact headers the browser sent for each playlist. Many streams check
+// a cookie or a token header added by the site's player; mpv must send the same.
+// "extraHeaders" is needed to see Cookie, Referer and Origin.
+const SKIP_HEADERS = /^(host|connection|content-length|accept-encoding|range|priority|pragma|cache-control|upgrade-insecure-requests|if-.*|sec-.*)$/i;
+chrome.webRequest.onSendHeaders.addListener(
+  (details) => {
+    if (details.tabId < 0 || !/\.m3u8/i.test(details.url)) return;
+    const headers = (details.requestHeaders || [])
+      .filter((h) => h.value != null && !SKIP_HEADERS.test(h.name))
+      .map((h) => [h.name, h.value]);
+    tabsWithStreams.add(details.tabId);
+    update(details.tabId, (streams) => {
+      const s = findOrAdd(streams, details);
+      if (JSON.stringify(s.headers) === JSON.stringify(headers)) return false;
+      s.headers = headers;
+    });
+  },
+  { urls: ["<all_urls>"], types: REQUEST_TYPES },
+  ["requestHeaders", "extraHeaders"]
+);
+
 // Playlist failed to load (timeout, DNS, connection refused): mark dead.
 chrome.webRequest.onErrorOccurred.addListener(
   (details) => {
