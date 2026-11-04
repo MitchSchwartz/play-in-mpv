@@ -8,6 +8,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 
@@ -15,6 +16,11 @@ LOG = os.path.expanduser("~/.cache/play-in-mpv.log")
 # Shared with every running mpv window: reload.lua polls it, so a toggle in the
 # popup applies to windows that are already open.
 SETTINGS = os.path.expanduser("~/.cache/play-in-mpv-settings")
+# One file per mpv window holding the feed's newest link. Many feeds carry a token
+# that expires after a few minutes; the extension forwards each fresh link the page
+# fetches, and reload.lua reconnects with it instead of the expired one.
+FEEDS = os.path.expanduser("~/.cache/play-in-mpv-feeds")
+SESSION_RE = re.compile(r"^[0-9a-f-]{8,64}$")
 
 # Windows process creation flags (spelled out so this file imports on any OS).
 # Chrome runs native hosts inside a job object and kills the whole tree when the
@@ -208,7 +214,39 @@ def write_settings(path, auto_reload):
     os.replace(tmp, path)
 
 
-def build_command(msg, mpv, settings=SETTINGS):
+def feed_path(session, feeds=FEEDS):
+    """This mpv window's latest-link file, or None for a missing or malformed session id."""
+    if not isinstance(session, str) or not SESSION_RE.match(session):
+        return None
+    return os.path.join(feeds, session)
+
+
+def write_feed(path, url):
+    """Write the latest link atomically so reload.lua never reads a half-written one."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        f.write(url + "\n")
+    os.replace(tmp, path)
+
+
+def prune_feeds(feeds=FEEDS, max_age=2 * 24 * 3600, now=None):
+    """Drop latest-link files from windows long gone."""
+    now = time.time() if now is None else now
+    try:
+        names = os.listdir(feeds)
+    except OSError:
+        return
+    for name in names:
+        path = os.path.join(feeds, name)
+        try:
+            if now - os.path.getmtime(path) > max_age:
+                os.remove(path)
+        except OSError:
+            pass
+
+
+def build_command(msg, mpv, settings=SETTINGS, feeds=FEEDS):
     cmd = [
         mpv,
         "--hwdec=auto-safe",
@@ -226,6 +264,9 @@ def build_command(msg, mpv, settings=SETTINGS):
         # These are raw stream URLs; yt-dlp can't add anything and only slows failures.
         "--ytdl=no",
     ]
+    feed = feed_path(msg.get("session"), feeds)
+    if feed:
+        cmd.append("--script-opts-append=play_in_mpv-feed=" + feed)
     for name, value in request_headers(msg):
         lower = name.lower()
         if lower == "user-agent":
@@ -289,6 +330,20 @@ def main():
         send_message({"ok": False, "error": "Bad URL"})
         return
 
+    # A fresh link for a feed already playing: the mpv window reloads with it.
+    if msg.get("action") == "refresh":
+        path = feed_path(msg.get("session"))
+        if not path:
+            send_message({"ok": False, "error": "Bad session"})
+            return
+        try:
+            write_feed(path, url)
+        except OSError as e:
+            send_message({"ok": False, "error": str(e)})
+            return
+        send_message({"ok": True})
+        return
+
     # Refresh the settings file on every launch so it matches the popup even if
     # it was deleted or the toggle was changed while the helper was missing.
     if "autoReload" in msg:
@@ -322,6 +377,7 @@ def main():
                                 % ", ".join(sorted(set(dropped))))
     else:
         cmd = build_command(msg, mpv_executable(os.environ))
+        prune_feeds()
 
     os.makedirs(os.path.dirname(LOG), exist_ok=True)
     log = open(LOG, "a")

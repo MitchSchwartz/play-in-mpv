@@ -75,6 +75,7 @@ chrome.webRequest.onCompleted.addListener(
         const now = Date.now();
         s.time = now;
         if (details.statusCode >= 200 && details.statusCode < 400) {
+          forwardFreshLink(details.tabId, details.url);
           s.hits++;
           s.dead = false;
           s.lastLoad = now;
@@ -109,6 +110,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === "popOut") {
     sendResponse({ ok: true }); // the popup closes as soon as the new window takes focus
     openPopout(msg).catch((e) => console.warn("pop-out failed", e));
+    return;
+  }
+  if (msg && msg.type === "followFeed") {
+    followFeed(msg);
     return;
   }
   if (msg && msg.type === "popoutFullscreen" && sender.tab) {
@@ -184,7 +189,46 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   tabsWithStreams.delete(tabId);
   chrome.storage.session.remove(`tab_${tabId}`);
   forgetPopout(tabId);
+  unfollowFeeds(tabId);
 });
+
+// ---- Fresh links for open mpv windows ----
+// Many feeds carry a token that expires after a few minutes; the page's player
+// keeps fetching the playlist with new tokens, but mpv only has the link it was
+// launched with. While the tab stays open, forward each new link for a feed
+// playing in mpv to the helper, which hands it to that window's reload script.
+const FOLLOWED_KEY = "followedFeeds";
+// Same feed = same playlist path; the query (token) and edge server may change.
+const feedKey = (url) => { try { return new URL(url).pathname; } catch { return url; } };
+
+async function getFollowed() {
+  return (await chrome.storage.session.get(FOLLOWED_KEY))[FOLLOWED_KEY] || {};
+}
+
+async function followFeed({ tabId, url, session }) {
+  const followed = await getFollowed();
+  // One mpv window per feed: a new launch of the same feed replaces the old one.
+  const others = (followed[tabId] || []).filter((f) => f.key !== feedKey(url));
+  followed[tabId] = [...others, { session, key: feedKey(url), url }];
+  await chrome.storage.session.set({ [FOLLOWED_KEY]: followed });
+}
+
+async function unfollowFeeds(tabId) {
+  const followed = await getFollowed();
+  if (!(tabId in followed)) return;
+  delete followed[tabId];
+  await chrome.storage.session.set({ [FOLLOWED_KEY]: followed });
+}
+
+async function forwardFreshLink(tabId, url) {
+  const followed = await getFollowed();
+  const feed = (followed[tabId] || []).find((f) => f.key === feedKey(url));
+  if (!feed || feed.url === url) return;
+  feed.url = url;
+  await chrome.storage.session.set({ [FOLLOWED_KEY]: followed });
+  chrome.runtime.sendNativeMessage("local.play_in_mpv", { action: "refresh", session: feed.session, url })
+    .catch((e) => console.warn("couldn't pass fresh link to mpv", e));
+}
 
 // ---- Pop-out player windows ----
 // A pop-out is a normal popup window showing only the player's own page, so Brave
@@ -201,16 +245,27 @@ async function getPopouts() {
   return (await chrome.storage.session.get(POPOUTS_KEY))[POPOUTS_KEY] || {};
 }
 
-async function openPopout({ src, ref, autoplay = true, fullscreen = true }) {
+async function openPopout({ src, ref, page, autoplay = true, fullscreen = true }) {
   if (!/^https?:/i.test(src)) return;
-  const host = new URL(src).hostname;
-  const hosts = [...new Set([host, host.replace(/^www\./, "")])];
   const win = await chrome.windows.create(
     fullscreen
       ? { url: "about:blank", type: "popup", state: "fullscreen" }
       : { url: "about:blank", type: "popup", width: 1024, height: 576 }
   );
   const tabId = win.tabs[0].id;
+  await setPopoutRules(tabId, src, ref);
+  const popouts = await getPopouts();
+  // windowFullscreen: the window is in the fullscreen *we* set (not the player's).
+  // fallback: the whole page, for when the player won't load on its own.
+  const fallback = page && page !== src && /^https?:/i.test(page) ? page : null;
+  popouts[tabId] = { src, autoplay, windowFullscreen: fullscreen, fallback };
+  await chrome.storage.session.set({ [POPOUTS_KEY]: popouts });
+  await chrome.tabs.update(tabId, { url: src });
+}
+
+async function setPopoutRules(tabId, src, ref) {
+  const host = new URL(src).hostname;
+  const hosts = [...new Set([host, host.replace(/^www\./, "")])];
   const [refRule, blockRule] = popoutRuleIds(tabId);
   const addRules = [{
     id: blockRule,
@@ -227,11 +282,28 @@ async function openPopout({ src, ref, autoplay = true, fullscreen = true }) {
     });
   }
   await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: popoutRuleIds(tabId), addRules });
+}
+
+// Some players only serve the real page inside their site's iframe and show a
+// placeholder ("Hello World", a blank page) when opened on their own. If the
+// pop-out has no video or frame shortly after loading, show the whole page instead.
+const PLAYER_CHECK_MS = 4000;
+async function checkPopoutPlayer(tabId) {
+  const [{ result: hasPlayer } = {}] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (ms) => new Promise((done) =>
+      setTimeout(() => done(!!document.querySelector("video, iframe, embed, object")), ms)),
+    args: [PLAYER_CHECK_MS],
+  }).catch(() => []);
   const popouts = await getPopouts();
-  // windowFullscreen: the window is in the fullscreen *we* set (not the player's).
-  popouts[tabId] = { src, autoplay, windowFullscreen: fullscreen };
+  const popout = popouts[tabId];
+  if (hasPlayer !== false || !popout?.fallback) return;
+  const page = popout.fallback;
+  popout.src = page;
+  popout.fallback = null;
   await chrome.storage.session.set({ [POPOUTS_KEY]: popouts });
-  await chrome.tabs.update(tabId, { url: src });
+  await setPopoutRules(tabId, page, "");
+  chrome.tabs.update(tabId, { url: page }).catch(() => {});
 }
 
 async function forgetPopout(tabId) {
@@ -260,6 +332,7 @@ chrome.webNavigation.onCompleted.addListener(async (details) => {
   const target = { tabId: details.tabId, frameIds: [details.frameId] };
   chrome.scripting.executeScript({ target, func: watchFullscreen }).catch(() => {});
   if (popout.autoplay) chrome.scripting.executeScript({ target, func: startPlayback }).catch(() => {});
+  if (details.frameId === 0 && popout.fallback) checkPopoutPlayer(details.tabId);
 });
 
 // The pop-out can be fullscreen two ways: the window fullscreen we set when opening

@@ -6,14 +6,21 @@
 -- writes the choice to a settings file (path passed via --script-opts) that this
 -- script polls, so the toggle also applies to windows that are already open.
 -- F5 / Ctrl+R / Cmd+R always work.
+--
+-- Many feeds carry a token that expires after a few minutes, after which the old
+-- link only gets 403 Forbidden. The extension forwards each fresh link the page
+-- fetches; the helper writes it to a per-window file (path passed via
+-- --script-opts) and every reload uses the newest link from it.
 
 local STALL_SECONDS = 5    -- frozen this long while not paused -> reload
-local MAX_RETRIES = 5      -- consecutive failed reloads before giving up
-local RETRY_DELAY = 2      -- seconds to wait after the stream ends/errors
+local MAX_RETRIES = 12     -- consecutive failed reloads before giving up (~1.5 min)
+local RETRY_DELAY = 2      -- seconds to wait after the first failure, growing per retry
+local MAX_RETRY_DELAY = 10
 local HEALTHY_SECONDS = 30 -- playback this long resets the retry count
 local POLL_SECONDS = 1     -- how often to re-read the settings file
 
 local settings_path = mp.get_opt("play_in_mpv-settings")
+local feed_path = mp.get_opt("play_in_mpv-feed")
 local auto_reload = true   -- default when there's no settings file
 
 local stream_url = nil
@@ -35,9 +42,24 @@ local function cancel_retry()
   end
 end
 
+-- The newest link the browser has seen for this feed, or nil.
+local function latest_url()
+  if not feed_path then return nil end
+  local f = io.open(feed_path, "r")
+  if not f then return nil end
+  local url = (f:read("*l") or ""):match("^%s*(https?://%S+)%s*$")
+  f:close()
+  return url
+end
+
 local function reload(reason)
   cancel_stall()
   cancel_retry()
+  local fresh = latest_url()
+  if fresh and fresh ~= stream_url then
+    stream_url = fresh
+    reason = reason .. ", new link"
+  end
   if not stream_url then return end
   mp.osd_message("Reloading stream (" .. reason .. ")…", 3)
   mp.msg.info("reloading: " .. reason)
@@ -105,7 +127,7 @@ mp.register_event("end-file", function(event)
   end
   retries = retries + 1
   cancel_retry()
-  retry_timer = mp.add_timeout(RETRY_DELAY, function()
+  retry_timer = mp.add_timeout(math.min(RETRY_DELAY * retries, MAX_RETRY_DELAY), function()
     retry_timer = nil
     reload("stream ended, retry " .. retries .. "/" .. MAX_RETRIES)
   end)

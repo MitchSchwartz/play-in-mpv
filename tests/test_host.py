@@ -158,6 +158,58 @@ class BuildCommandTest(unittest.TestCase):
         self.assertIn("--script=" + expected, host.build_command(MSG, "mpv"))
 
 
+class FeedRefreshTest(unittest.TestCase):
+    SESSION = "0f8fad5b-d9cb-469f-a165-70867728950e"
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def run_helper(self, msg):
+        env = dict(os.environ, HOME=self.tmp, USERPROFILE=self.tmp, MPV_PATH="/nonexistent/mpv")
+        payload = json.dumps(msg).encode()
+        out = subprocess.run(
+            [sys.executable, host.__file__],
+            input=struct.pack("<I", len(payload)) + payload,
+            capture_output=True, env=env, check=True,
+        ).stdout
+        return json.loads(out[4:])
+
+    def test_command_passes_feed_path_to_script(self):
+        cmd = host.build_command(dict(MSG, session=self.SESSION), "mpv", feeds="/tmp/feeds")
+        self.assertIn("--script-opts-append=play_in_mpv-feed=/tmp/feeds/" + self.SESSION, cmd)
+        self.assertEqual(cmd[-1], MSG["url"])
+
+    def test_command_without_session_has_no_feed_path(self):
+        self.assertFalse([a for a in host.build_command(MSG, "mpv") if "play_in_mpv-feed" in a])
+
+    def test_malformed_session_rejected(self):
+        for bad in ["../../etc/passwd", "a/b", "", None, 42, "ABC"]:
+            self.assertIsNone(host.feed_path(bad, "/tmp/feeds"), bad)
+
+    def test_refresh_action_writes_latest_link(self):
+        fresh = "https://cdn.example/live/mono.m3u8?token=new"
+        self.assertEqual(self.run_helper({"action": "refresh", "session": self.SESSION, "url": fresh}), {"ok": True})
+        with open(os.path.join(self.tmp, ".cache", "play-in-mpv-feeds", self.SESSION)) as f:
+            self.assertEqual(f.read(), fresh + "\n")
+
+    def test_refresh_action_rejects_bad_session(self):
+        res = self.run_helper({"action": "refresh", "session": "../x", "url": "https://a.example/x.m3u8"})
+        self.assertFalse(res["ok"])
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, ".cache", "play-in-mpv-feeds")))
+
+    def test_prune_drops_only_old_files(self):
+        old, new = os.path.join(self.tmp, "old"), os.path.join(self.tmp, "new")
+        for p in (old, new):
+            host.write_feed(p, "https://a.example/x.m3u8")
+        os.utime(old, (1000, 1000))
+        host.prune_feeds(self.tmp, max_age=3600, now=1000 + 7200)
+        self.assertFalse(os.path.exists(old))
+        self.assertTrue(os.path.exists(new))
+
+
 class SettingsTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()

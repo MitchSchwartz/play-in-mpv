@@ -38,10 +38,13 @@ async function setupAutoReload() {
 
 // Ask the helper to play one feed. It checks the feed's first chunk and refuses
 // (browserOnly) if the video is hidden in images, without opening a player.
+// session names the mpv window, so fresh links for the feed can reach it later.
 async function launch(tab, stream) {
+  const session = crypto.randomUUID();
   try {
     const res = await chrome.runtime.sendNativeMessage(HOST, {
       url: stream.url,
+      session,
       referrer: stream.initiator ? stream.initiator + "/" : tab.url,
       origin: stream.initiator || "",
       userAgent: navigator.userAgent,
@@ -51,6 +54,9 @@ async function launch(tab, stream) {
       // Exact headers the browser sent for this playlist (cookies, tokens, referer).
       headers: stream.headers || null,
     });
+    if (res && res.ok && $("player").value === "mpv") {
+      chrome.runtime.sendMessage({ type: "followFeed", tabId: tab.id, url: stream.url, session }).catch(() => {});
+    }
     return res || { ok: false, error: "No response from helper" };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -72,12 +78,17 @@ function pauseBrowserVideo(tab) {
 
 // Open only the player frame that loaded this feed as its own popup window (a normal
 // page, so Brave Shields apply). background.js opens and guards the window, passing
-// the page that embedded the player as Referer.
+// the page that embedded the player as Referer, and the whole page as a fallback for
+// players that refuse to load outside their site.
 async function popOut(tab, stream) {
   let src = tab.url;
   let ref = "";
   if (stream.frameId) {
-    const f = await chrome.webNavigation.getFrame({ tabId: tab.id, frameId: stream.frameId }).catch(() => null);
+    // Look the frame up by the document that loaded the feed: the frame itself may
+    // have moved on to another page since (then there's no match, so use the page).
+    const f = await chrome.webNavigation.getFrame(
+      stream.documentId ? { documentId: stream.documentId } : { tabId: tab.id, frameId: stream.frameId }
+    ).catch(() => null);
     if (f && /^https?:/i.test(f.url)) {
       src = f.url;
       const parent = f.parentFrameId >= 0
@@ -88,7 +99,7 @@ async function popOut(tab, stream) {
   }
   await pauseBrowserVideo(tab);
   await chrome.runtime.sendMessage({
-    type: "popOut", src, ref,
+    type: "popOut", src, ref, page: tab.url,
     autoplay: $("autoplay").checked,
     fullscreen: $("fullscreen").checked,
   });

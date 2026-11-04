@@ -232,8 +232,14 @@ If VLC isn't on your PATH, set `VLC_PATH` (like `MPV_PATH`).
 - **F5**, **Ctrl+R** or **Cmd+R** (macOS) in the mpv window reloads the stream (jumps back to
   the live edge, keeping the referrer and headers).
 - mpv **reloads automatically** if playback freezes for 5 seconds or the stream ends
-  unexpectedly. After 5 failed attempts in a row it stops and shows "Stream lost — press F5
-  to retry". Tune the timings at the top of `mpv/reload.lua`.
+  unexpectedly, waiting a little longer after each failure. After 12 failed attempts in a row
+  (about a minute and a half) it stops and shows "Stream lost — press F5 to retry". Tune the
+  timings at the top of `mpv/reload.lua`.
+- **Expiring links:** many feeds put a token in the playlist link that stops working after a
+  few minutes (the server answers 403 Forbidden), so reloading the same link can't help. While
+  the stream's browser tab stays open, the extension passes each new link the page's player
+  fetches to that mpv window, and every reload uses the newest one. Close the tab and mpv is
+  left with the last link it got. (Each window's link is kept in `~/.cache/play-in-mpv-feeds/`.)
 - Turn automatic reloading **off or on with the toggle in the extension popup**. The change
   applies within a second to mpv windows that are already open, as well as new ones. F5 still
   works when it's off. (The choice is stored in `~/.cache/play-in-mpv-settings`, which each mpv
