@@ -24,6 +24,11 @@ isn't supported (this is a Chromium Manifest V3 extension).
 
 ## How it picks the right feed
 
+A playlist is any link ending in `.m3u8`, or any response the server labels as an HLS playlist
+(`application/vnd.apple.mpegurl`), for players whose links have no `.m3u8` in them. Players that
+fetch their playlist through a service worker (peer-to-peer add-ons do) are matched to the
+player frame on the same site.
+
 Streaming pages often load several playlists — backups, decoys, dead mirrors. Each one is
 scored from real network activity:
 
@@ -184,6 +189,8 @@ repo.
 
 Start the video, let it play ~10 seconds, click the extension → **▶ Play in mpv**.
 
+The toolbar icon turns from grey to colour once the tab has a feed the extension can open.
+
 mpv output is logged to `~/.cache/play-in-mpv.log` (`%USERPROFILE%\.cache\play-in-mpv.log` on
 Windows).
 
@@ -197,6 +204,7 @@ HLS test stream.
 | `Specified native messaging host not found` | Re-run the installer, then fully quit and reopen the browser (system tray on Windows, Cmd+Q on macOS). |
 | `The system cannot find the file specified` / `No such file or directory` | mpv wasn't found. The browser was probably started before mpv was installed: fully restart it, or set `MPV_PATH` to mpv's full path. |
 | `No response from helper` / `Native host has exited` | Python failed to start. Re-run the installer and read its warnings. |
+| Icon stays grey while the video plays | The extension can't see the playlist. Open the popup, click **Record network summary**, start the video, then reopen the popup and **Copy network summary**; the list shows how the player loads its video (attach it to an issue). |
 | (macOS) mpv window flashes and closes; log ends in `unrecognized selector` or `Placement heap type is not supported` | Your Mac's GPU lacks Metal 3. Install mpv 0.39 instead; see [Which mpv for my Mac?](#which-mpv-for-my-mac). |
 
 ### Watch in pop-out (main button)
@@ -217,15 +225,38 @@ still apply**. You can close the original tab afterwards.
 - **F5** restarts the player, which also brings back hardware video decoding if the browser
   fell back to the CPU after a glitch.
 
+Some players only load inside their own site: opened alone, they show a placeholder ("Hello
+World", a blank or 404 page) or send the window to their homepage or a login. When the pop-out
+changes address by itself in its first seconds, or still has no video about 10 seconds after
+loading (allowing for splash screens) and isn't loading a stream, it loads the player the way
+the page does instead — the frame the page embedded it in (sites like onhockey.tv load each
+stream into a frame), or else the whole page — and stretches the player over the window.
+
 For that window only, the extension sends the original page as the referrer (embeds often
 refuse to load without it), blocks clicks that try to take the window to another site and puts
 the player back (click-hijack ads), and closes any tab or window the player opens (pop-ups).
+A move to another site within the first 10 seconds is the player refusing to run on its own
+instead; see below.
 
 **▶ Play in mpv** (secondary button) hands the feed to an external player instead — lighter
 still, when the feed allows it. The dropdown next to it picks **mpv** or **VLC** (remembered).
 VLC only accepts a referrer and user agent, not cookies or token headers, so streams that check
 those only play in mpv; the popup says so when it happens. Auto-reload and F5 are mpv-only.
 If VLC isn't on your PATH, set `VLC_PATH` (like `MPV_PATH`).
+
+### Open videos automatically on a site
+
+To skip the popup on sites you watch often, open it there once and set **When a video starts on
+<site>** to **Open it in the pop-out** or **Play it in mpv / VLC**. From then on, as soon as a
+video on that site actually plays (a couple of video chunks in), the extension does that by
+itself, using the popup's other settings (auto-play, fullscreen window, pausing the original —
+which stays paused and muted even if the site's player tries to restart it, until you click or
+press a key on that page). If mpv or VLC can't take the feed, it opens the pop-out instead.
+
+It happens once per stream: picking another stream on the page (many sites swap only the player,
+without reloading the page) opens that one too, replacing the pop-out it opened before, while
+the same stream reconnecting doesn't. The choice is per site (`www.` ignored) and **Do nothing**
+turns it off.
 
 ### Reloading a jammed stream
 
@@ -254,6 +285,10 @@ If VLC isn't on your PATH, set `VLC_PATH` (like `MPV_PATH`).
 - `install.sh` — registers the helper with Brave/Chrome/Chromium (Linux and macOS)
 - `install.ps1` — registers the helper with Brave/Chrome/Chromium (Windows)
 - `extension/scoring.js` — feed scoring shared by the background worker and popup
+- `extension/icons/` — the extension's icon (`icon.svg`) and its PNG sizes, rendered by
+  `render_icons.py`
+- `extension/actions.js` — launching a feed (pop-out or external player), shared by the
+  background worker and popup
 - `tests/` — unit tests: `python -m unittest discover -s tests` (helper) and
   `node --test tests/test_scoring.js` (feed scoring)
 

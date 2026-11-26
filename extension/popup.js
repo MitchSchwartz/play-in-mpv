@@ -1,4 +1,3 @@
-const HOST = "local.play_in_mpv";
 const $ = (id) => document.getElementById(id);
 
 function status(msg, isErr = false) {
@@ -36,31 +35,13 @@ async function setupAutoReload() {
   };
 }
 
-// Ask the helper to play one feed. It checks the feed's first chunk and refuses
-// (browserOnly) if the video is hidden in images, without opening a player.
-// session names the mpv window, so fresh links for the feed can reach it later.
 async function launch(tab, stream) {
-  const session = crypto.randomUUID();
-  try {
-    const res = await chrome.runtime.sendNativeMessage(HOST, {
-      url: stream.url,
-      session,
-      referrer: stream.initiator ? stream.initiator + "/" : tab.url,
-      origin: stream.initiator || "",
-      userAgent: navigator.userAgent,
-      title: tab.title || "Stream",
-      autoReload: $("autoReload").checked,
-      player: $("player").value,
-      // Exact headers the browser sent for this playlist (cookies, tokens, referer).
-      headers: stream.headers || null,
-    });
-    if (res && res.ok && $("player").value === "mpv") {
-      chrome.runtime.sendMessage({ type: "followFeed", tabId: tab.id, url: stream.url, session }).catch(() => {});
-    }
-    return res || { ok: false, error: "No response from helper" };
-  } catch (e) {
-    return { ok: false, error: e.message };
+  const player = $("player").value;
+  const res = await launchFeed(tab, stream, { player, autoReload: $("autoReload").checked });
+  if (res.session) {
+    chrome.runtime.sendMessage({ type: "followFeed", tabId: tab.id, url: stream.url, session: res.session }).catch(() => {});
   }
+  return res;
 }
 
 function markBrowserOnly(tab, stream) {
@@ -69,37 +50,16 @@ function markBrowserOnly(tab, stream) {
 }
 
 function pauseBrowserVideo(tab) {
-  if (!$("pause").checked) return Promise.resolve();
-  return chrome.scripting.executeScript({
-    target: { tabId: tab.id, allFrames: true },
-    func: () => document.querySelectorAll("video").forEach((v) => { v.pause(); v.muted = true; }),
-  }).catch(() => {});
+  return $("pause").checked ? pauseVideos(tab.id) : Promise.resolve();
 }
 
 // Open only the player frame that loaded this feed as its own popup window (a normal
-// page, so Brave Shields apply). background.js opens and guards the window, passing
-// the page that embedded the player as Referer, and the whole page as a fallback for
-// players that refuse to load outside their site.
+// page, so Brave Shields apply). background.js opens and guards the window.
 async function popOut(tab, stream) {
-  let src = tab.url;
-  let ref = "";
-  if (stream.frameId) {
-    // Look the frame up by the document that loaded the feed: the frame itself may
-    // have moved on to another page since (then there's no match, so use the page).
-    const f = await chrome.webNavigation.getFrame(
-      stream.documentId ? { documentId: stream.documentId } : { tabId: tab.id, frameId: stream.frameId }
-    ).catch(() => null);
-    if (f && /^https?:/i.test(f.url)) {
-      src = f.url;
-      const parent = f.parentFrameId >= 0
-        ? await chrome.webNavigation.getFrame({ tabId: tab.id, frameId: f.parentFrameId }).catch(() => null)
-        : null;
-      ref = parent && /^https?:/i.test(parent.url) ? parent.url : tab.url;
-    }
-  }
+  const target = await popoutTarget(tab, stream);
   await pauseBrowserVideo(tab);
   await chrome.runtime.sendMessage({
-    type: "popOut", src, ref, page: tab.url,
+    type: "popOut", ...target,
     autoplay: $("autoplay").checked,
     fullscreen: $("fullscreen").checked,
   });
@@ -153,6 +113,51 @@ async function setupPopoutOptions() {
   $("fullscreen").checked = popoutFullscreen;
   $("autoplay").onchange = () => chrome.storage.local.set({ popoutAutoplay: $("autoplay").checked });
   $("fullscreen").onchange = () => chrome.storage.local.set({ popoutFullscreen: $("fullscreen").checked });
+  const { pauseOriginal = true } = await chrome.storage.local.get("pauseOriginal");
+  $("pause").checked = pauseOriginal;
+  $("pause").onchange = () => chrome.storage.local.set({ pauseOriginal: $("pause").checked });
+}
+
+// Per-site automatic action: what to do on this site as soon as a video starts,
+// without opening the popup (background.js does it).
+async function setupSiteAction(tab) {
+  const site = siteKey(tab.url);
+  if (!site || !/^https?:/i.test(tab.url)) return;
+  const { siteActions = {} } = await chrome.storage.local.get("siteActions");
+  $("siteName").textContent = site;
+  $("siteAction").value = siteActions[site] || "";
+  $("siteRow").hidden = false;
+  $("siteAction").onchange = async () => {
+    const { siteActions = {} } = await chrome.storage.local.get("siteActions");
+    if ($("siteAction").value) siteActions[site] = $("siteAction").value;
+    else delete siteActions[site];
+    await chrome.storage.local.set({ siteActions });
+    status($("siteAction").value
+      ? `Saved: videos on ${site} will open automatically from now on (reload the page to start this one).`
+      : `Saved: nothing happens automatically on ${site}.`);
+  };
+}
+
+// Diagnosing a stream the extension can't find: record this tab's requests, start
+// the video, then copy them.
+async function setupNetworkSummary(tab) {
+  const { tabId } = (await chrome.runtime.sendMessage({ type: "recordingTab" }).catch(() => null)) || {};
+  if (tabId === tab.id) {
+    $("diagnose").textContent = "Copy network summary";
+    $("diagnose").onclick = async () => {
+      const res = await chrome.runtime.sendMessage({ type: "networkSummary", tabId: tab.id }).catch(() => null);
+      if (!res) return status("Couldn't read the network summary", true);
+      await navigator.clipboard.writeText(`${tab.url}\n${res.text}`);
+      status(`Network summary copied (${res.count} requests).`);
+    };
+    return;
+  }
+  $("diagnose").onclick = async () => {
+    await chrome.runtime.sendMessage({ type: "recordNetwork", tabId: tab.id }).catch(() => null);
+    status("Recording this tab's requests for 5 minutes. Start the video, let it play ~10 seconds, " +
+      "then open this popup again and click Copy network summary.");
+    $("diagnose").hidden = true;
+  };
 }
 
 (async () => {
@@ -160,6 +165,8 @@ async function setupPopoutOptions() {
   await setupPopoutOptions();
   await setupPlayerChoice();
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  await setupSiteAction(tab);
+  setupNetworkSummary(tab);
   const key = `tab_${tab.id}`;
   let streams = (await chrome.storage.session.get(key))[key] || [];
 

@@ -7,5 +7,6 @@
   "permissions": ["webRequest", "webNavigation", "storage", "nativeMessaging", "scripting", "tabs", "declarativeNetRequestWithHostAccess"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" },
-  "action": { "default_title": "Play in mpv", "default_popup": "popup.html" }
+  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "action": { "default_title": "Play in mpv", "default_popup": "popup.html", "default_icon": { "16": "icons/icon16-off.png", "32": "icons/icon32-off.png", "48": "icons/icon48-off.png", "128": "icons/icon128-off.png" } }
 }

@@ -28,6 +28,11 @@
   .switch input:checked + .slider { background: #2e7d32; }
   .switch input:checked + .slider::before { transform: translateX(16px); }
   .switch input:focus-visible + .slider { outline: 2px solid #9ccc65; outline-offset: 2px; }
+  .site { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; margin-top: 10px; border-top: 1px solid #333; }
+  .site[hidden] { display: none; }
+  .site b { color: #eee; font-weight: 600; }
+  #siteAction { font: inherit; background: #333; color: #eee; border: 0; border-radius: 6px; padding: 6px; cursor: pointer; }
+  #diagnose { margin-top: 8px; background: none; color: #888; padding: 0; font-size: 11px; text-decoration: underline; }
   #status { margin-top: 8px; min-height: 1em; color: #9ccc65; white-space: pre-wrap; }
   #status.err { color: #ef5350; }
 </style>
@@ -48,6 +53,13 @@
   </div>
   <ul id="list"></ul>
   <label><input type="checkbox" id="pause" checked> Pause the video on the original page after launching</label>
+  <label class="site" id="siteRow" hidden><span>When a video starts on <b id="siteName"></b>:</span>
+    <select id="siteAction">
+      <option value="">Do nothing (use the buttons)</option>
+      <option value="popout">Open it in the pop-out</option>
+      <option value="player">Play it in mpv / VLC (as chosen above)</option>
+    </select>
+  </label>
   <label class="toggle" for="autoReload">
     <span>Auto-reload when the stream freezes
       <small>mpv only. Applies to open mpv windows too. F5 always reloads.</small></span>
@@ -57,7 +69,9 @@
     </span>
   </label>
   <div id="status"></div>
+  <button id="diagnose" title="Records this tab's requests, to work out why a stream isn't found">Record network summary</button>
   <script src="scoring.js"></script>
+  <script src="actions.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

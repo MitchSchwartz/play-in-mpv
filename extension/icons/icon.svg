@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Play in mpv: a play button breaking out of its window (pop-out / external player). -->
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="#1e1e1e"/>
+  <rect x="20" y="30" width="72" height="72" rx="12" fill="none" stroke="#555" stroke-width="8"/>
+  <path d="M44 44 L44 88 L82 66 Z" fill="#43a047" stroke="#43a047" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M78 22 H106 V50" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M104 24 L80 48" stroke="#fff" stroke-width="9" stroke-linecap="round"/>
+</svg>
