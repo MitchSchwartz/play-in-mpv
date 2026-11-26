@@ -212,7 +212,8 @@ HLS test stream.
 **⧉ Watch in pop-out** opens just the site's video player page in its own window, without the
 rest of the site (ads, chat, scripts), and pauses the original tab's video. It works with every
 feed, including ones mpv can't play (🖼 browser only). It's a normal page, so **Brave Shields
-still apply**. You can close the original tab afterwards.
+still apply**. You can close the original tab afterwards. There's only ever one pop-out window:
+popping out another stream loads it into the open one and brings it to the front.
 
 - **Auto-play** (on by default): starts the video, clicking the player's play button if it has
   one. Brave blocks sound until you interact unless the site may autoplay; then it starts muted
@@ -254,7 +255,7 @@ which stays paused and muted even if the site's player tries to restart it, unti
 press a key on that page). If mpv or VLC can't take the feed, it opens the pop-out instead.
 
 It happens once per stream: picking another stream on the page (many sites swap only the player,
-without reloading the page) opens that one too, replacing the pop-out it opened before, while
+without reloading the page) opens that one too, in the same pop-out window, while
 the same stream reconnecting doesn't. The choice is per site (`www.` ignored) and **Do nothing**
 turns it off.
 

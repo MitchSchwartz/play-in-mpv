@@ -318,26 +318,42 @@ async function getPopouts() {
   return (await chrome.storage.session.get(POPOUTS_KEY))[POPOUTS_KEY] || {};
 }
 
+// One pop-out at a time: a new stream loads into the open pop-out window (brought
+// to the front, keeping its size and fullscreen state) instead of opening another.
 async function openPopout({ src, ref, page, pageRef = "", autoplay = true, fullscreen = true }) {
   if (!/^https?:/i.test(src)) return;
-  const win = await chrome.windows.create(
-    fullscreen
-      ? { url: "about:blank", type: "popup", state: "fullscreen" }
-      : { url: "about:blank", type: "popup", width: 1024, height: 576 }
-  );
-  const tabId = win.tabs[0].id;
-  await setPopoutRules(tabId, src, ref);
   const popouts = await getPopouts();
+  let tabId = null;
+  let windowFullscreen = fullscreen;
+  for (const id of Object.keys(popouts)) {
+    const tab = await chrome.tabs.get(Number(id)).catch(() => null);
+    if (tab && tabId == null) {
+      tabId = tab.id;
+      windowFullscreen = popouts[id].windowFullscreen;
+      chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+    } else {
+      if (tab) chrome.windows.remove(tab.windowId).catch(() => {}); // extra pop-outs from before
+      delete popouts[id];
+    }
+  }
+  if (tabId == null) {
+    const win = await chrome.windows.create(
+      fullscreen
+        ? { url: "about:blank", type: "popup", state: "fullscreen" }
+        : { url: "about:blank", type: "popup", width: 1024, height: 576 }
+    );
+    tabId = win.tabs[0].id;
+  }
+  await setPopoutRules(tabId, src, ref);
   // windowFullscreen: the window is in the fullscreen *we* set (not the player's).
   // fallback: the page holding the player, for when it won't run on its own
   // (popoutTarget in actions.js), requested with fallbackRef as Referer.
   const fallback = page && page !== src && /^https?:/i.test(page) ? page : null;
   // openedAt: a player refusing to run on its own redirects within seconds of
   // opening (see the onCommitted and onErrorOccurred listeners below).
-  popouts[tabId] = { src, autoplay, windowFullscreen: fullscreen, fallback, fallbackRef: pageRef, openedAt: Date.now() };
+  popouts[tabId] = { src, autoplay, windowFullscreen, fallback, fallbackRef: pageRef, openedAt: Date.now() };
   await chrome.storage.session.set({ [POPOUTS_KEY]: popouts });
   await chrome.tabs.update(tabId, { url: src });
-  return win.id;
 }
 
 async function setPopoutRules(tabId, src, ref) {
@@ -594,7 +610,6 @@ function fillWithFrame(childUrl) {
 // playlist triggers it again, while the same one (a player reloading itself, a
 // fresh token) doesn't. Reloading the page starts over.
 const AUTO_KEY = "autoHandled";
-const AUTO_WINDOWS_KEY = "autoPopoutWindows";
 const autoBusy = new Set();
 
 async function autoAct(tabId, stream) {
@@ -629,14 +644,7 @@ async function autoAct(tabId, stream) {
     }
     const target = await popoutTarget(tab, stream);
     if (prefs.pauseOriginal) await pauseVideos(tabId);
-    // A new stream replaces the pop-out this tab opened automatically before.
-    const windows = (await chrome.storage.session.get(AUTO_WINDOWS_KEY))[AUTO_WINDOWS_KEY] || {};
-    if (windows[tabId] != null) chrome.windows.remove(windows[tabId]).catch(() => {});
-    const winId = await openPopout({ ...target, autoplay: prefs.popoutAutoplay, fullscreen: prefs.popoutFullscreen });
-    if (winId != null) {
-      windows[tabId] = winId;
-      await chrome.storage.session.set({ [AUTO_WINDOWS_KEY]: windows });
-    }
+    await openPopout({ ...target, autoplay: prefs.popoutAutoplay, fullscreen: prefs.popoutFullscreen });
   } catch (e) {
     console.warn("automatic action failed", e);
   } finally {
